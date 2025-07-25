@@ -29,7 +29,7 @@ file_type   = rst           # History data dump
 dt          = 20.           # time increment between outputs
 
 <time>
-cfl_number  = 0.1           # The Courant, Friedrichs, & Lewy (CFL) Number
+cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
 tlim        = 20.           # time limit
 xorder      = 2             # horizontal reconstruction order
@@ -42,11 +42,11 @@ x1max       = 1.E3          # maximum value of X1
 ix1_bc      = reflecting    # inner-X1 boundary flag
 ox1_bc      = outflow       # outer-X1 boundary flag
 
-nx2         = 50            # Number of zones in X2-direction
-x2min       = -250.         # minimum value of X2
-x2max       =  250.         # maximum value of X2
-ix2_bc      = outflow      # inner-X2 boundary flag
-ox2_bc      = outflow      # outer-X2 boundary flag
+nx2         = 200            # Number of zones in X2-direction
+x2min       = -1.E3.         # minimum value of X2
+x2max       =  1.E3          # maximum value of X2
+ix2_bc      = outflow       # inner-X2 boundary flag
+ox2_bc      = outflow       # outer-X2 boundary flag
 
 nx3         = 1             # Number of zones in X3-direction
 x3min       = -0.5          # minimum value of X3
@@ -56,14 +56,14 @@ ox3_bc      = periodic      # outer-X3 boundary flag
 
 <meshblock>
 nx1         = 50
-nx2         = 10
+nx2         = 100
 nx3         = 1
 
 <hydro>
 grav_acc1   = -0.113
 gamma      = 1.45        # gamma = C_pd/C_vd
 drag_coef = 2e-3
-implicit_flag = 1
+implicit_flag = 0
 
 <problem>
 thermodynamics_config = geyser_h2o.yaml
@@ -71,7 +71,7 @@ thermodynamics_config = geyser_h2o.yaml
 Ptriple1 = 611.7
 Ttriple1 = 273.16
 Rd = 4155
-massflux_H2ratio = 0.01 # injected mass ratio of H2
+massflux_H2ratio = 1.0 # injected mass ratio of H2
 massflux_CO2ratio = 0.01 # injected mass ratio of CO2
 
 dT    = 2.0
