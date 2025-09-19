@@ -1,0 +1,22 @@
+reference-state:
+  Tref: 273.16
+  Pref: 611.7
+
+species:
+  - name: dry
+    composition: {H: 2}
+    cv_R: 2.4999255317433278
+
+  - name: H2O
+    composition: {H: 2, O: 1}
+    cv_R: 3.4981860785979535
+
+  - name: H2O(s)
+    composition: {H: 2, O: 1}
+    cv_R: 7.523757442052769
+    u0_R: -5424.644029492072
+
+reactions:
+  - equation: H2O <=> H2O(s)
+    type: nucleation
+    rate-constant: {formula: h2o_ideal}

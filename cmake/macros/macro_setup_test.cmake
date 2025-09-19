@@ -28,7 +28,15 @@ macro(setup_test namel)
             SYSTEM
             ${TORCH_INCLUDE_DIR}
             SYSTEM
-            ${TORCH_API_INCLUDE_DIR})
+            ${TORCH_API_INCLUDE_DIR}
+            SYSTEM
+            ${DISORT_INCLUDE_DIR}
+            SYSTEM
+            ${HARP_INCLUDE_DIR}
+            SYSTEM
+            ${KINTERA_INCLUDE_DIR}
+            SYSTEM
+            ${SNAP_INCLUDE_DIR})
 
   target_link_libraries(
     ${namel}.${buildl} gtest_main $<$<BOOL:${PVFMM}>:pvfmmStatic>

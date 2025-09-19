@@ -13,6 +13,7 @@
 // canoe
 #include <configure.hpp>
 #include <impl.hpp>
+#include <interface/hydro.hpp>
 
 // snap
 #include <snap/implicit/implicit_solver.hpp>
@@ -290,34 +291,30 @@ TaskStatus ImplicitHydroTasks::UpdateAllConserved(MeshBlock *pmb, int stage) {
   // only do chemistry and thermodynamcis at last rk step
   if (stage != nstages) return TaskStatus::next;
 
-  int is = pmb->is, js = pmb->js, ks = pmb->ks;
-  int ie = pmb->ie, je = pmb->je, ke = pmb->ke;
-
   auto pthermo = Thermodynamics::GetInstance();
 
-  auto &u = pmb->phydro->u;
-  auto &m = pmb->pcoord->m;
+  // auto &m = pmb->pcoord->m;
 
-  for (int k = ks; k <= ke; k++)
-    for (int j = js; j <= je; j++)
-      for (int i = is; i <= ie; i++) {
-        /*std::cout << "before: " << std::endl;
-        for (int n = 0; n < NHYDRO; n++) {
-          std::cout << u(n, k, j, i) << ", ";
-        }
-        std::cout << std::endl;*/
+  int ny = IVX - 1;
+  auto u = get_all(pmb->phydro->u);
 
-        pthermo->SetConserved(u.at(k, j, i), m.at(k, j, i));
-        // pthermo->Evolve(pmb->pmy_mesh->time, pmb->pmy_mesh->dt);
-        pthermo->EquilibrateUV(pmb->pmy_mesh->dt);
-        pthermo->GetConserved(u.at(k, j, i), m.at(k, j, i));
+  auto rho = u.narrow(0, IDN, 1 + ny).sum(0);
+  auto ke = 0.5 * (u[IVX] * u[IVX] + u[IVY] * u[IVY] + u[IVZ] * u[IVZ]) / rho;
+  auto ie = u[IPR] - ke;
+  auto yfrac = u.narrow(0, 1, ny) / rho;
 
-        /*std::cout << "after: " << std::endl;
-        for (int n = 0; n < NHYDRO; n++) {
-          std::cout << u(n, k, j, i) << ", ";
-        }
-        std::cout << std::endl;*/
-      }
+  auto yfrac_input = yfrac.clone();
+
+  const_cast<Thermodynamics*>(pthermo)->thermo_y->forward(rho, ie, yfrac);
+
+  auto yfrac_diff = yfrac - yfrac_input;
+
+  // std::cout << "q_solid.max = " << yfrac[1].max().item<double>() << ", ";
+
+  u.narrow(0, 1, ny) = yfrac * rho;  // update mass fractions
+
+  std::cout << "yfrac_diff.max = " << yfrac_diff.abs().max().item<double>()
+    << std::endl;
 
   return TaskStatus::success;
 }

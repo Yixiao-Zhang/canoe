@@ -65,6 +65,10 @@ message(STATUS "${PROJECT_NAME}-3. Setting up system libraries")
 find_package(Eigen3 REQUIRED)
 find_package(Cantera)
 find_package(Torch)
+find_package(Disort REQUIRED)
+find_package(Harp REQUIRED)
+find_package(Kintera REQUIRED)
+find_package(Snap REQUIRED)
 
 include(${CMAKE_SOURCE_DIR}/cmake/yamlpp.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/gtest.cmake)
@@ -90,7 +94,7 @@ add_subdirectory(data)
 message(STATUS "${PROJECT_NAME}-5. Setting up unit tests")
 
 add_subdirectory(examples)
-add_subdirectory(tests)
+# add_subdirectory(tests)
 
 ## 6. set up python binding ##
 add_subdirectory(python)

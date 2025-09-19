@@ -28,6 +28,9 @@
 #include <constants.hpp>
 #include <impl.hpp>
 
+// yaml-cpp
+#include <yaml-cpp/yaml.h>
+
 // snap
 #include "thermodynamics.hpp"
 
@@ -95,6 +98,19 @@ Thermodynamics* Thermodynamics::fromYAMLInput(std::string const& fname) {
 
   // update temperature dependent thermodynamic properties
   mythermo_->UpdateThermoProperties();
+
+  YAML::Node config = YAML::LoadFile(fname);
+  const std::string kintera_input_key = "kintera_input";
+  if (config[kintera_input_key]) {
+    std::string kintera_input_fname = (
+      config[kintera_input_key].as<std::string>()
+    );
+    auto op_thermo = kintera::ThermoOptions::from_yaml(kintera_input_fname);
+    mythermo_->thermo_y = kintera::ThermoY(op_thermo);
+  } else {
+    std::cout << "Missing " << kintera_input_key
+      << " in " << fname << std::endl;
+  }
 
   return mythermo_;
 }

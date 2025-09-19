@@ -54,3 +54,5 @@ reactions:
   - equation: CO2 <=> CO2(s)
     type: nucleation
     rate-constant: {formula: ideal, T3: 216.59, P3: 5.18e5, beta: 15., delta: 4.986, minT: 10000.}
+
+kintera_input: "geyser_kintera.yaml"

@@ -19,6 +19,9 @@
 #include <configure.hpp>
 #include <constants.hpp>
 
+// kintera
+#include <kintera/thermo/thermo.hpp>
+
 // snap
 #include <snap/stride_iterator.hpp>
 
@@ -47,6 +50,8 @@ class Thermodynamics {
   static Thermodynamics *fromYAMLInput(std::string const &fname);
 
  public:
+  kintera::ThermoY thermo_y;
+
   enum { Size = 1 + NVAPOR + NCLOUD + NPRECIP };
 
   //! thermodynamics input key in the input file [thermodynamics_config]

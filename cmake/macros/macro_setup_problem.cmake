@@ -30,5 +30,17 @@ macro(setup_problem namel)
             SYSTEM
             ${NETCDF_INCLUDES}
             SYSTEM
-            ${PNETCDF_INCLUDE_DIR})
+            ${PNETCDF_INCLUDE_DIR}
+            SYSTEM
+            ${TORCH_API_INCLUDE_DIR}
+            SYSTEM
+            ${TORCH_INCLUDE_DIR}
+            SYSTEM
+            ${DISORT_INCLUDE_DIR}
+            SYSTEM
+            ${HARP_INCLUDE_DIR}
+            SYSTEM
+            ${KINTERA_INCLUDE_DIR}
+            SYSTEM
+            ${SNAP_INCLUDE_DIR})
 endmacro()
