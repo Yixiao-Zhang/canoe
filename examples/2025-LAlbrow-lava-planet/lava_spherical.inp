@@ -45,27 +45,27 @@ ix1_bc = reflecting
 ox1_bc = outflow
 
 # theta: full colatitude (0 → π)
-nx2    = 80
-x2min  = 0.05
-x2max  = 3.1
+nx2    = 180
+x2min  = 0.08726646259971647
+x2max  = 3.0543261909900767
 ix2_bc = reflecting
 ox2_bc = reflecting
 
 # phi: full azimuth (0 → 2π)
-nx3    = 80
-x3min  = 0.05
-x3max  = 6.2
+nx3    = 1
+x3min  = 0.
+x3max  = 6.28318530718
 ix3_bc = periodic
 ox3_bc = periodic
 
 
 <meshblock>
-nx1 = 40
-nx2 = 20
-nx3 = 20
+nx1 = 20
+nx2 = 10
+nx3 = 1
 
 <hydro>
-gamma      = 1.33    # - gamma = C_pd/C_vd
+gamma      = 1.33    # unused
 implicit_flag = 0
 grav_acc1   = -9.
 
