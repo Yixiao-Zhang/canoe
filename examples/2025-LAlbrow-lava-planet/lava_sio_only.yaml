@@ -1,0 +1,36 @@
+phases:
+  - name: atm
+    thermo: ideal-moist
+    species: [dry, SiO, SiO(s)]
+    kinetics: condensation
+
+species:
+  - name: dry
+    composition: {C: 1, O: 2}
+    thermo:
+      model: constant-cp
+      T0: 1975.
+      cp0: 37.12 J/mol/K # i'm assuming background is co2, https://webbook.nist.gov/cgi/cbook.cgi?ID=C124389&Mask=1&Type=JANAFG&Table=on
+
+  - name: SiO
+    composition: {Si: 1, O: 1}
+    thermo:
+      model: constant-cp
+      T0: 1975.
+      cp0: 29.9 J/mol/K # i assume this is at T=298, from https://webbook.nist.gov/cgi/cbook.cgi?ID=C10097286&Units=SI&Mask=1&Type=JANAFG&Table=on 
+
+  - name: SiO(s)
+    composition: {Si: 1, O: 1}
+    thermo:
+      model: constant-cp
+      T0: 1975. # melting point from wikipedia
+      cp0: 29.9 J/mol/K # todo
+      h0: -406.586 kJ/mol  # this comes from h0 = - (beta - delta) * R * T0
+    equation-of-state:
+      model: constant-volume
+      molar-volume: 0.0 cm^3/mol # incompressible
+
+reactions:
+  - equation: SiO <=> SiO(s)
+    type: nucleation
+    rate-constant: {formula: ideal, T3: 1975., P3: 5000., beta: 24.76, delta: 0, minT: 0.} # tbh chatgpt did this i don't know chemistry

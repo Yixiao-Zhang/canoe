@@ -65,3 +65,7 @@ endif()
 if (${TASK} STREQUAL "geyser")
   add_subdirectory(2024-YixiaoZ-geyser)
 endif()
+
+if (${TASK} STREQUAL "lava_planet")
+  add_subdirectory(2025-LAlbrow-lava-planet)
+endif()
