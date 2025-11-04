@@ -9,24 +9,24 @@ tasklist    = ImplicitHydroTasks
 
 <output1>
 file_type   = hst           # History data dump
-dt          = 60           # time increment between outputs
+dt          = 900           # time increment between outputs
 # dcycle = 1
 
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 60           # time increment between outputs
+dt          = 900          # time increment between outputs
 # dcycle = 1
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 60           # time increment
+dt          = 900          # time increment
 # dcycle = 1
 
 <output4>
 file_type   = rst           # History data dump
-dt          = 10000           # time increment between outputs
+dt          = 100000         # time increment between outputs
 
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
@@ -38,16 +38,16 @@ integrator  = rk3           # integration method
 
 <mesh>
 # r: radial shell
-nx1    = 40
+nx1    = 20
 x1min  = 6500.E3
 x1max  = 6600.E3
 ix1_bc = reflecting
 ox1_bc = outflow
 
 # theta: full colatitude (0 → π)
-nx2    = 180
-x2min  = 0.08726646259971647
-x2max  = 3.0543261909900767
+nx2    = 80
+x2min  = 0.17453292519943295
+x2max  = 2.9670597283903604
 ix2_bc = reflecting
 ox2_bc = reflecting
 
@@ -60,8 +60,8 @@ ox3_bc = periodic
 
 
 <meshblock>
-nx1 = 20
-nx2 = 10
+nx1 = 10
+nx2 = 20
 nx3 = 1
 
 <hydro>

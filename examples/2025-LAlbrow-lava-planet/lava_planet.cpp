@@ -62,6 +62,7 @@ int iSiO, iSiOc, iCO2, iCO2c;
 
 Real x1min, x1max, x2min, x2max;
 Real massflux_CO2ratio;
+Real radius;
 
 
 // ==========================================================
@@ -127,9 +128,8 @@ bool fclose(Real x, Real x0) { return std::abs(x - x0) < 1.e-6; }
 // MeshBlock Data Setup
 // ==========================================================
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(2);
+  AllocateUserOutputVariables(1);
   SetUserOutputVariableName(0, "temp");
-  SetUserOutputVariableName(1, "p_sat");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
@@ -143,7 +143,6 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
       for (int i = is; i <= ie; ++i) {
         Real temp = pthermo->GetTemp(w.at(k, j, i));
         user_out_var(0, k, j, i) = temp;
-        user_out_var(1, k, j, i) = vapor_cond.p_sat(temp);
       }
 }
 
@@ -190,7 +189,7 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
                         / pmb->pcoord->dx1f(i));
 
         Real drhoSiO = dt * drho_dt;
-        Real drhoCO2 = drhoSiO * massflux_CO2ratio;
+        Real drhoCO2 = std::max(drhoSiO * massflux_CO2ratio, 0.);
         Real drho = drhoSiO + drhoCO2;
         Real t_exchange = (drho > 0) ? t_surface : t_air;
 
@@ -250,6 +249,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   x2max = pin->GetReal("mesh", "x2max");
 
   massflux_CO2ratio = pin->GetReal("problem", "massflux_CO2ratio");
+  radius = pin->GetReal("problem", "radius");
 
   EnrollUserExplicitSourceFunction(Forcing);
 }
@@ -262,9 +262,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
 
   std::vector<Real> yfrac(IVX, 0.);
-  yfrac[iSiO] = SiOratio;
-  yfrac[iSiOc] = 0.0;
-  yfrac[0] = 1. - yfrac[iSiO] - yfrac[iSiOc];
+  yfrac[0] = 1.;
+  yfrac[iSiOc] = 0.;
+  yfrac[iSiO] = 1. - yfrac[0] - yfrac[iSiOc];
   pthermo->SetMassFractions<Real>(yfrac.data());
 
   auto vapor_cond = VaporCondensation<Real>();
@@ -272,10 +272,17 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)
       for (int i = is; i <= ie; ++i) {
-        Real init_temp = SURF_TEMP_MIN;
-        Real init_pres = 1e-9 * VAPOR_P3;
-        pthermo->EquilibrateTP(init_temp, init_pres);
+        Real t_surface = surface_temperature(pcoord->x2v(j),
+                                             SURF_TEMP_COEFF, SURF_TEMP_MIN);
+        Real z = pcoord->x1v(i) - radius;
+        Real p_surface = 0.1 * vapor_cond.p_sat(SURF_TEMP_COEFF);
+        Real pres = p_surface * std::exp(
+          - (z * grav) / (pthermo->GetRd() * t_surface)
+        );
+        pthermo->EquilibrateTP(t_surface, pres);
 
+        phydro->w(iSiO, k, j, i) = yfrac[iSiO];
+        phydro->w(iSiOc, k, j, i) = yfrac[iSiOc];
         phydro->w(IDN, k, j, i) = pthermo->GetDensity();
         phydro->w(IPR, k, j, i) = pthermo->GetPres();
       }
