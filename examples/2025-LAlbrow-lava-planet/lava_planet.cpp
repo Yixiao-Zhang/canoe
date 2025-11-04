@@ -264,7 +264,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   std::vector<Real> yfrac(IVX, 0.);
   yfrac[iSiO] = SiOratio;
   yfrac[iSiOc] = 0.0;
-  yfrac[0] = 1-yfrac[iSiO]-yfrac[iSiOc];
+  yfrac[0] = 1. - yfrac[iSiO] - yfrac[iSiOc];
   pthermo->SetMassFractions<Real>(yfrac.data());
 
   auto vapor_cond = VaporCondensation<Real>();
@@ -272,21 +272,11 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)
       for (int i = is; i <= ie; ++i) {
-        Real init_temp = surface_temperature(pcoord->x2v(j),
-                                             SURF_TEMP_COEFF, SURF_TEMP_MIN);
-        Real init_pres = 1.0e-3* vapor_cond.p_sat(init_temp);
+        Real init_temp = SURF_TEMP_MIN;
+        Real init_pres = 1e-9 * VAPOR_P3;
         pthermo->EquilibrateTP(init_temp, init_pres);
 
-        Real rho = pthermo->GetDensity();
-        if (!std::isfinite(rho) || rho <= 0.0) {
-          std::cout << "Warning: Non-physical density detected at (i,j,k)=("
-                    << i << "," << j << "," << k << "), rho=" << rho
-                    << ", T=" << init_temp << ", P=" << init_pres
-                    << ". Clamping to minimum physical value.\n";
-          rho = 1e-10;
-        }
-
-        phydro->w(IDN, k, j, i) = rho;
+        phydro->w(IDN, k, j, i) = pthermo->GetDensity();
         phydro->w(IPR, k, j, i) = pthermo->GetPres();
       }
 

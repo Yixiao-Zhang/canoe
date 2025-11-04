@@ -67,7 +67,7 @@ nx3 = 20
 <hydro>
 gamma      = 1.33    # - gamma = C_pd/C_vd
 implicit_flag = 0
-grav_acc1   = -9 
+grav_acc1   = -9.
 
 <problem>
 thermodynamics_config = lava_sio_only.yaml
@@ -75,5 +75,5 @@ radius = 6500.E3
 massflux_CO2ratio = 0.01 # - injected mass ratio of CO2
 
 <initialcondition>
-SiOratio=1.E-4
-CO2ratio=0.0f
+SiOratio=0.
+CO2ratio=0.
