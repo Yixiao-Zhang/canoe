@@ -60,6 +60,8 @@ Real x1min, x1max, x2min, x2max;
 Real massflux_CO2ratio;
 Real radius;
 
+const Real removal_rate_SiOc = 1e-2;
+
 
 // ==========================================================
 // VaporCondensation class
@@ -174,15 +176,24 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
                         * std::min(1.0, time / STARTUP_TIME)
                         / pmb->pcoord->dx1f(i));
 
+        Real drhoSiOc_dt = (
+          - removal_rate_SiOc * w(IDN, k, j, i) * w(iSiOc, k, j, i));
+
         Real drhoSiO = dt * drhoSiO_dt;
+        Real drhoSiOc = dt * drhoSiOc_dt;
         Real drhoCO2 = std::max(drhoSiO * massflux_CO2ratio, 0.);
-        Real drho = drhoSiO + drhoCO2;
+        Real drho = drhoSiO + drhoCO2 + drhoSiOc;
         Real t_exchange = (drho > 0) ? t_surface : t_air;
 
         u(iSiO, k, j, i) += drhoSiO;
         u(IEN, k, j, i) += drhoSiO *
           ((pthermo->GetRd() / (pthermo->GetGammad() - 1.0)) *
            t_exchange * pthermo->GetCvRatio(iSiO));
+
+        u(iSiOc, k, j, i) += drhoSiOc;
+        u(IEN, k, j, i) += drhoSiOc *
+          ((pthermo->GetRd() / (pthermo->GetGammad() - 1.0)) *
+           t_exchange * pthermo->GetCvRatio(iSiOc));
 
         u(IDN, k, j, i) += drhoCO2;
         u(IEN, k, j, i) += drhoCO2 *
