@@ -78,7 +78,7 @@ class VaporCondensation {
   static auto SiOVaporCondensation(void) {
     return VaporCondensation<Real>(
       SiO_VAPOR_GAS_CONST, SiO_VAPOR_ADIABATIC_INDEX,
-      SiO_ASAT, SiO_BSAT);
+      SiO_AEQ, SiO_BEQ);
   }
 
   template<class R>
@@ -170,11 +170,11 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
                         * pthermo->GetTemp(w.at(k, j, i))
                         * pthermo->GetRd() * pthermo->GetInvMuRatio(iSiO));
 
-        Real drho_dt = (vapor_cond.net_vapor_flux(t_surface, t_air, p_vapor)
+        Real drhoSiO_dt = (vapor_cond.net_vapor_flux(t_surface, t_air, p_vapor)
                         * std::min(1.0, time / STARTUP_TIME)
                         / pmb->pcoord->dx1f(i));
 
-        Real drhoSiO = dt * drho_dt;
+        Real drhoSiO = dt * drhoSiO_dt;
         Real drhoCO2 = std::max(drhoSiO * massflux_CO2ratio, 0.);
         Real drho = drhoSiO + drhoCO2;
         Real t_exchange = (drho > 0) ? t_surface : t_air;
@@ -248,7 +248,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
 
   std::vector<Real> yfrac(IVX, 0.);
-  yfrac[0] = 1.;
+  yfrac[0] = 1e-3;
   yfrac[iSiOc] = 0.;
   yfrac[iSiO] = 1. - yfrac[0] - yfrac[iSiOc];
   pthermo->SetMassFractions<Real>(yfrac.data());
@@ -258,12 +258,11 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)
       for (int i = is; i <= ie; ++i) {
-        Real t_surface = surface_temperature(pcoord->x2v(j),
-                                             SURF_TEMP_COEFF, SURF_TEMP_MIN);
+        Real t_surface = SURF_TEMP_COEFF;
         Real z = pcoord->x1v(i) - radius;
-        Real p_surface = 0.1 * vapor_cond.p_eq(SURF_TEMP_COEFF);
+        Real p_surface = vapor_cond.p_eq(t_surface);
         Real pres = p_surface * std::exp(
-          - (z * grav) / (pthermo->GetRd() * t_surface)
+          - (z * grav) / (vapor_cond.gas_constant * t_surface)
         );
         pthermo->EquilibrateTP(t_surface, pres);
 

@@ -42,7 +42,7 @@ nx1    = 20
 x1min  = 6500.E3
 x1max  = 6600.E3
 ix1_bc = reflecting
-ox1_bc = outflow
+ox1_bc = reflecting
 
 # theta: full colatitude (0 → π)
 nx2    = 80
