@@ -19,20 +19,16 @@
 // ========================
 
 // --- Physical constants for vapor ---
-const Real VAPOR_P3              = 5000.0;       // Pascal
-const Real VAPOR_T3              = 1975.0;       // Kelvin
-const Real VAPOR_GAS_CONST       = 188.605;      // J/kg/K
-const Real VAPOR_ADIABATIC_INDEX = 1.4;
-const Real VAPOR_BETA            = 24.76;
-const Real VAPOR_DELTA           = 0.;
+const Real SiO_VAPOR_GAS_CONST       = 188.605;      // J/kg/K
+const Real SiO_VAPOR_ADIABATIC_INDEX = 1.4;
 
 // --- Vapor pressure relation constants ---
 // Saturation pressure
-const Real ASAT = std::pow(10.0, 13.1);
-const Real BSAT = 49520.0;
+const Real SiO_ASAT = std::pow(10.0, 13.1);
+const Real SiO_BSAT = 49520.0;
 // Chemical equilibrium pressure
-const Real AEQ  = std::pow(10.0, 14.086);
-const Real BEQ  = 70300.0;
+const Real SiO_AEQ  = std::pow(10.0, 14.086);
+const Real SiO_BEQ  = 70300.0;
 
 // --- Surface temperature parameters ---
 const Real SURF_TEMP_COEFF = 1500.0;  // scaling constant (Atemp)
@@ -71,36 +67,28 @@ Real radius;
 template<class Real>
 class VaporCondensation {
  public:
-  Real p3, temp3, gas_constant, gamma, beta, delta;
+  const Real gas_constant, gamma;
+  const Real Aeq, Beq;
 
-  VaporCondensation(Real p3, Real temp3,
-                    Real gas_constant, Real gamma,
-                    Real beta, Real delta)
-      : p3(p3), temp3(temp3), gas_constant(gas_constant),
-        gamma(gamma), beta(beta), delta(delta) {}
+  VaporCondensation(Real gas_constant, Real gamma,
+                    Real Aeq, Real Beq)
+      : gas_constant(gas_constant), gamma(gamma),
+      Aeq(Aeq), Beq(Beq) {}
 
-  VaporCondensation(void)
-      : p3(VAPOR_P3), temp3(VAPOR_T3), gas_constant(VAPOR_GAS_CONST),
-        gamma(VAPOR_ADIABATIC_INDEX),
-        beta(VAPOR_BETA), delta(VAPOR_DELTA) {}
-
-  template<class R>
-  inline auto p_sat(const R &temp) const {
-    auto t3 = temp / temp3;
-    return p3 * exp(beta * (1. - 1./t3) - delta * log(t3));
+  static auto SiOVaporCondensation(void) {
+    return VaporCondensation<Real>(
+      SiO_VAPOR_GAS_CONST, SiO_VAPOR_ADIABATIC_INDEX,
+      SiO_ASAT, SiO_BSAT);
   }
 
-  template<class R1, class R2>
-  inline auto specific_enthalpy_diff(const R1 &ice_temp,
-                                     const R2 &air_temp) const {
-    return gas_constant *
-           (gamma / (gamma - 1.0) * (air_temp - ice_temp)
-            + beta * temp3 - delta * ice_temp);
+  template<class R>
+  inline auto p_eq(const R &temp) const {
+    return Aeq * exp(-Beq / temp);
   }
 
   template<class R>
   inline auto one_side_vapor_flux(const R &temp) const {
-    return one_side_vapor_flux(temp, p_sat(temp));
+    return one_side_vapor_flux(temp, p_eq(temp));
   }
 
   template<class R>
@@ -136,8 +124,6 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
   auto &w = phydro->w;
 
-  auto vapor_cond = VaporCondensation<Real>();
-
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)
       for (int i = is; i <= ie; ++i) {
@@ -167,7 +153,7 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
                      AthenaArray<Real> &s) {
   auto pthermo = Thermodynamics::GetInstance();
 
-  auto vapor_cond = VaporCondensation<Real>();
+  auto vapor_cond = VaporCondensation<Real>::SiOVaporCondensation();
 
   int i = pmb->is;
 
@@ -267,7 +253,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   yfrac[iSiO] = 1. - yfrac[0] - yfrac[iSiOc];
   pthermo->SetMassFractions<Real>(yfrac.data());
 
-  auto vapor_cond = VaporCondensation<Real>();
+  auto vapor_cond = VaporCondensation<Real>::SiOVaporCondensation();
 
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)
@@ -275,7 +261,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
         Real t_surface = surface_temperature(pcoord->x2v(j),
                                              SURF_TEMP_COEFF, SURF_TEMP_MIN);
         Real z = pcoord->x1v(i) - radius;
-        Real p_surface = 0.1 * vapor_cond.p_sat(SURF_TEMP_COEFF);
+        Real p_surface = 0.1 * vapor_cond.p_eq(SURF_TEMP_COEFF);
         Real pres = p_surface * std::exp(
           - (z * grav) / (pthermo->GetRd() * t_surface)
         );
