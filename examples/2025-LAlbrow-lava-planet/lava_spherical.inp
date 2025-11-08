@@ -31,7 +31,7 @@ dt          = 100000         # time increment between outputs
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
-tlim        = 86400.        # time limit
+tlim        = 864000.        # time limit
 xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
@@ -61,7 +61,7 @@ ox3_bc = periodic
 
 <meshblock>
 nx1 = 10
-nx2 = 20
+nx2 = 10
 nx3 = 1
 
 <hydro>
