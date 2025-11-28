@@ -9,45 +9,48 @@ tasklist    = ImplicitHydroTasks
 
 <output1>
 file_type   = hst           # History data dump
-dt          = 10.           # time increment between outputs
+dt          = 1e3          # time increment between outputs
 # dcycle = 1
 
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 10.          # time increment between outputs
+dt          = 1e3           # time increment between outputs
 # dcycle = 1
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 10.           # time increment
+dt          = 1e3           # time increment
 # dcycle = 1
 
 <output4>
 file_type   = rst           # History data dump
-dt          = 100000         # time increment between outputs
+dt          = 1e20          # time increment between outputs
 
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
-tlim        = 6000.         # time limit
+tlim        = 1e6           # time limit
 xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 
 <mesh>
 # r: radial shell
-nx1    = 40
-x1min  = 6500.E3
-x1max  = 6540.E3
+nx1    = 120
+x1min  = 2800.E3
+x1max  = 2800.E5
+x1rat = 1.05
 ix1_bc = reflecting
 ox1_bc = outflow
 
 # theta: full colatitude
-nx2    = 40
-x2min  = 0.17453292519943295
-x2max  = 2.9670597283903604
+nx2    = 30
+# x2min  = 0.17453292519943295
+# x2max  = 2.9670597283903604
+x2min  = 0.
+x2max  = 3.141592653589793
 ix2_bc = reflecting
 ox2_bc = reflecting
 
@@ -60,25 +63,25 @@ ox3_bc = periodic
 
 
 <meshblock>
-nx1 = 40
-nx2 = 40
+nx1 = 15
+nx2 = 15
 nx3 = 1
 
 <hydro>
 gamma      = 1.33    # unused
 implicit_flag = 0
-grav_acc1   = -9.8
 dfloor = 4.7733339292364615e-153
 pfloor = 4.7733339292364615e-153
 
 <problem>
 thermodynamics_config = lava_sio_only.yaml
-radius = 6500.E3
-surface_temperature_min = 3000.
+surface_grav = 2.5
+radius = 2800.E3
+surface_temperature_min = 250.
 surface_temperature_max = 3000.
 
 <initialcondition>
-SiO_massfrac = 0.99
+SiO_massfrac = 1.
 SiOc_massfrac = 0.
-surface_pres = 8100.
+surface_pres = 1e-7
 temperature = 3000.

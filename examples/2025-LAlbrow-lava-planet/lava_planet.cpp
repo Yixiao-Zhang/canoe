@@ -13,6 +13,11 @@
 #include <climath/interpolation.h>
 #include <snap/thermodynamics/atm_thermodynamics.hpp>
 
+template<class Real>
+inline auto square(Real x) {
+  return x * x;
+}
+
 
 // ========================
 // CONFIGURATION PARAMETERS
@@ -48,6 +53,7 @@ const Real SiO_BEQ  = 70300.0;
 // ==========================================================
 Real surface_temperature_min;
 Real surface_temperature_max;
+Real surface_grav;
 
 const Real removal_rate_SiOc = 1e-2;
 
@@ -161,19 +167,47 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
             * pthermo->GetCvRatio(i_species) / (pthermo->GetGammad() - 1.0));
           const Real p_vapor = (w(IDN, k, j, i) * w(i_species, k, j, i)
                             * t_air * gas_constant);
-          const Real drhoSiO = (
+          const Real drho= (
             dt * delta
             * vapor_cond.net_vapor_flux(t_surface, t_air, p_vapor)
           );
+          const Real t_exchange = drho > 0 ? t_surface : t_air;
 
-          u(i_species, k, j, i) += drhoSiO;
-          u(IEN, k, j, i) += drhoSiO * (cv + gas_constant) * t_surface;
+          u(i_species, k, j, i) += drho;
+          u(IEN, k, j, i) += drho * (cv + gas_constant) * t_exchange;
+          if (drho < 0) {
+            u(IVX, k, j, i) += drho * w(IVX, k, j, i);
+            u(IVY, k, j, i) += drho * w(IVY, k, j, i);
+            u(IVZ, k, j, i) += drho * w(IVZ, k, j, i);
+            u(IEN, k, j, i) += drho * 0.5 * (
+              square(u(IVX, k, j, i))
+              + square(u(IVY, k, j, i))
+              + square(u(IVZ, k, j, i))
+            );
+          }
+          u(IEN, k, j, i) += removal_rate_SiOc * (t_surface - t_air) * cv * w(IDN, k, j, i);
         }
       }
     }
   }
 }
 
+void Gravity(MeshBlock *pmb, Real const time, Real const dt,
+                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+                     AthenaArray<Real> &s) {
+  for (int k = pmb->ks; k <= pmb->ke; ++k) {
+    for (int j = pmb->js; j <= pmb->je; ++j) {
+      for (int i = pmb->is; i <= pmb->ie; ++i) {
+        const Real radius = pmb->pmy_mesh->mesh_size.x1min;
+        const Real grav = surface_grav * square(radius / pmb->pcoord->x1v(i));
+        const Real src = -grav * dt * w(IDN, k, j, i);
+        u(IVX, k, j, i) += src;
+        u(IEN, k, j, i) += src * w(IVX, k, j, i);
+      }
+    }
+  }
+}
 
 // ==========================================================
 // Forcing Wrapper
@@ -183,6 +217,7 @@ void Forcing(MeshBlock *pmb, Real const time, Real const dt,
              AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
              AthenaArray<Real> &s) {
   BottomInjection(pmb, time, dt, w, r, bcc, u, s);
+  Gravity(pmb, time, dt, w, r, bcc, u, s);
 }
 
 
@@ -194,6 +229,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 
   surface_temperature_min = pin->GetReal("problem", "surface_temperature_min");
   surface_temperature_max = pin->GetReal("problem", "surface_temperature_max");
+  surface_grav = pin->GetReal("problem", "surface_grav");
 
   EnrollUserExplicitSourceFunction(Forcing);
 }
@@ -207,7 +243,6 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   const int iSiO = pthermo->SpeciesIndex("SiO");
   const int iSiOc = pthermo->SpeciesIndex("SiO(s)");
 
-  const Real grav = -pin->GetReal("hydro", "grav_acc1");
   const Real radius = pmy_mesh->mesh_size.x1min;
   const Real p_surface = pin->GetReal("initialcondition", "surface_pres");
   const Real temperature = pin->GetReal("initialcondition", "temperature");
@@ -224,14 +259,16 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     + yfrac[iSiO] * pthermo->GetInvMuRatio(iSiO)
   );
 
-  const Real inv_scale_height = grav / (gas_constant * temperature);
+  const Real inv_scale_height = surface_grav / (gas_constant * temperature);
 
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)
       for (int i = is; i <= ie; ++i) {
 
         const Real z = pcoord->x1v(i) - radius;
-        const Real pres = p_surface * std::exp(-z*inv_scale_height);
+        const Real pres = p_surface * std::exp(
+          -inv_scale_height * radius * z / (radius + z)
+        );
         const Real rho = pres / (gas_constant * temperature);
 
         phydro->w(IDN, k, j, i) = rho;
