@@ -60,7 +60,7 @@ nx2         = 100
 nx3         = 1
 
 <hydro>
-grav_acc1   = -0.113
+grav_acc1   = -500.
 gamma      = 1.45        # gamma = C_pd/C_vd
 drag_coef = 2e-3
 implicit_flag = 0

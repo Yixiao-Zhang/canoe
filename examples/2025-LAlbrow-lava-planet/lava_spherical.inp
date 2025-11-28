@@ -1,7 +1,7 @@
 <comment>
 problem   = Moist rising bubble test
 reference = Bryan and Fritsch, 2002
-configure = --prob=lava_planet --flux=lmars --nvapor=2 --nphase=2 --nghost=3 --coord=spherical_polar -pnetcdf -mpi 
+configure = --prob=lava_planet --flux=lmars --nvapor=2 --nphase=2 --nghost=3 --coord=spherical_polar -pnetcdf -mpi
 
 <job>
 problem_id  = lava_planet        # problem ID: basename of output filenames
@@ -9,19 +9,19 @@ tasklist    = ImplicitHydroTasks
 
 <output1>
 file_type   = hst           # History data dump
-dt          = 900           # time increment between outputs
+dt          = 10.           # time increment between outputs
 # dcycle = 1
 
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 900          # time increment between outputs
+dt          = 10.          # time increment between outputs
 # dcycle = 1
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 900          # time increment
+dt          = 10.           # time increment
 # dcycle = 1
 
 <output4>
@@ -31,27 +31,27 @@ dt          = 100000         # time increment between outputs
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
-tlim        = 864000.        # time limit
+tlim        = 6000.         # time limit
 xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 
 <mesh>
 # r: radial shell
-nx1    = 20
+nx1    = 40
 x1min  = 6500.E3
-x1max  = 6600.E3
+x1max  = 6540.E3
 ix1_bc = reflecting
-ox1_bc = reflecting
+ox1_bc = outflow
 
-# theta: full colatitude (0 → π)
-nx2    = 80
+# theta: full colatitude
+nx2    = 40
 x2min  = 0.17453292519943295
 x2max  = 2.9670597283903604
 ix2_bc = reflecting
 ox2_bc = reflecting
 
-# phi: full azimuth (0 → 2π)
+# phi: full azimuth
 nx3    = 1
 x3min  = 0.
 x3max  = 6.28318530718
@@ -60,20 +60,25 @@ ox3_bc = periodic
 
 
 <meshblock>
-nx1 = 10
-nx2 = 10
+nx1 = 40
+nx2 = 40
 nx3 = 1
 
 <hydro>
 gamma      = 1.33    # unused
 implicit_flag = 0
-grav_acc1   = -9.
+grav_acc1   = -9.8
+dfloor = 4.7733339292364615e-153
+pfloor = 4.7733339292364615e-153
 
 <problem>
 thermodynamics_config = lava_sio_only.yaml
 radius = 6500.E3
-massflux_CO2ratio = 0.01 # - injected mass ratio of CO2
+surface_temperature_min = 3000.
+surface_temperature_max = 3000.
 
 <initialcondition>
-SiOratio=0.
-CO2ratio=0.
+SiO_massfrac = 0.99
+SiOc_massfrac = 0.
+surface_pres = 8100.
+temperature = 3000.

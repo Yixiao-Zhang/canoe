@@ -1452,8 +1452,8 @@ void Thermodynamics::EquilibrateUV(Real dt) const {
   const Real dry_gas_constant = universial_gas_constant / dry_mw;
   const Real water_gas_constant = universial_gas_constant / water_mw;
 
-  const Real dry_cp_mol = 37.12;
-  const Real water_vapor_cp_mol = 29.9;
+  const Real dry_cp_mol = 29.1;
+  const Real water_vapor_cp_mol = 29.1;
 
   const Real dry_cp = dry_cp_mol / dry_mw;
   const Real water_vapor_cp = water_vapor_cp_mol / water_mw;
@@ -1462,8 +1462,8 @@ void Thermodynamics::EquilibrateUV(Real dt) const {
   const Real water_vapor_cv = water_vapor_cp - water_gas_constant;
 
   const Real temp3 = 1975.;
-  const Real pres3 = 5000.;
-  const Real beta = 24.76;
+  const Real pres3 = 1573.088083;
+  const Real beta = 25.0734177215;
   const Real delta = 0.;
 
   IdealGas<Real> dry(dry_gas_constant, dry_cv);

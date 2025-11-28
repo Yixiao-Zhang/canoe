@@ -24,18 +24,11 @@ const Real SiO_VAPOR_ADIABATIC_INDEX = 1.4;
 
 // --- Vapor pressure relation constants ---
 // Saturation pressure
-const Real SiO_ASAT = std::pow(10.0, 13.1);
-const Real SiO_BSAT = 49520.0;
+// const Real SiO_ASAT = std::pow(10.0, 13.1);
+// const Real SiO_BSAT = 49520.0;
 // Chemical equilibrium pressure
 const Real SiO_AEQ  = std::pow(10.0, 14.086);
 const Real SiO_BEQ  = 70300.0;
-
-// --- Surface temperature parameters ---
-const Real SURF_TEMP_COEFF = 1500.0;  // scaling constant (Atemp)
-const Real SURF_TEMP_MIN   = 250.0;   // minimum temperature (Btemp)
-
-// --- Miscellaneous ---
-const Real STARTUP_TIME = 5.0; // Time for gradual injection ramp-up
 
 // ========================
 // END CONFIGURATION SECTION
@@ -53,12 +46,8 @@ const Real STARTUP_TIME = 5.0; // Time for gradual injection ramp-up
 // ==========================================================
 // Globals
 // ==========================================================
-Real SiOratio, CO2ratio, grav;
-int iSiO, iSiOc, iCO2, iCO2c;
-
-Real x1min, x1max, x2min, x2max;
-Real massflux_CO2ratio;
-Real radius;
+Real surface_temperature_min;
+Real surface_temperature_max;
 
 const Real removal_rate_SiOc = 1e-2;
 
@@ -138,11 +127,10 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
 // ==========================================================
 // Surface temperature function
 // ==========================================================
-template<class Real>
-Real surface_temperature(Real theta, Real tempcoeff, Real mintemp) {
+inline Real surface_temperature(Real theta) {
   Real c = std::max(std::cos(theta), 0.);
-  Real val = tempcoeff * std::pow(c, 0.25);
-  return std::max(val, mintemp);
+  Real val = surface_temperature_max * std::pow(c, 0.25);
+  return std::max(val, surface_temperature_min);
 }
 
 
@@ -154,64 +142,35 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
                      AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
                      AthenaArray<Real> &s) {
   auto pthermo = Thermodynamics::GetInstance();
-
   auto vapor_cond = VaporCondensation<Real>::SiOVaporCondensation();
+  const auto i_species = pthermo->SpeciesIndex("SiO");
 
-  int i = pmb->is;
+  for (int k = pmb->ks; k <= pmb->ke; ++k) {
+    for (int j = pmb->js; j <= pmb->je; ++j) {
+      for (int i = pmb->is; i <= pmb->ie; ++i) {
+        const Real radius = pmb->pmy_mesh->mesh_size.x1min;
+        const Real z = pmb->pcoord->x1v(i) - radius;
+        const Real dz = pmb->pcoord->dx1f(i);
+        const Real delta = z < dz ? 1. / dz : 0.;
+        if (delta > 0) {
+          const Real t_surface = surface_temperature(pmb->pcoord->x2v(j));
+          const Real t_air = pthermo->GetTemp(w.at(k, j, i));
+          const Real gas_constant = (pthermo->GetRd()
+            * pthermo->GetInvMuRatio(i_species));
+          const Real cv = (pthermo->GetRd()
+            * pthermo->GetCvRatio(i_species) / (pthermo->GetGammad() - 1.0));
+          const Real p_vapor = (w(IDN, k, j, i) * w(i_species, k, j, i)
+                            * t_air * gas_constant);
+          const Real drhoSiO = (
+            dt * delta
+            * vapor_cond.net_vapor_flux(t_surface, t_air, p_vapor)
+          );
 
-  if (pmb->pcoord->x1v(i) <
-      pmb->pmy_mesh->mesh_size.x1min + pmb->pcoord->dx1f(i)) {
-    for (int k = pmb->ks; k <= pmb->ke; ++k)
-      for (int j = pmb->js; j <= pmb->je; ++j) {
-
-        Real t_surface = surface_temperature(pmb->pcoord->x2v(j),
-                                             SURF_TEMP_COEFF, SURF_TEMP_MIN);
-        Real t_air = pthermo->GetTemp(w.at(k, j, i));
-
-        Real p_vapor = (w(IDN, k, j, i) * w(iSiO, k, j, i)
-                        * pthermo->GetTemp(w.at(k, j, i))
-                        * pthermo->GetRd() * pthermo->GetInvMuRatio(iSiO));
-
-        Real drhoSiO_dt = (vapor_cond.net_vapor_flux(t_surface, t_air, p_vapor)
-                        * std::min(1.0, time / STARTUP_TIME)
-                        / pmb->pcoord->dx1f(i));
-
-        Real drhoSiOc_dt = (
-          - removal_rate_SiOc * w(IDN, k, j, i) * w(iSiOc, k, j, i));
-
-        Real drhoSiO = dt * drhoSiO_dt;
-        Real drhoSiOc = dt * drhoSiOc_dt;
-        Real drhoCO2 = std::max(drhoSiO * massflux_CO2ratio, 0.);
-        Real drho = drhoSiO + drhoCO2 + drhoSiOc;
-        Real t_exchange = (drho > 0) ? t_surface : t_air;
-
-        u(iSiO, k, j, i) += drhoSiO;
-        u(IEN, k, j, i) += drhoSiO *
-          ((pthermo->GetRd() / (pthermo->GetGammad() - 1.0)) *
-           t_exchange * pthermo->GetCvRatio(iSiO));
-
-        u(iSiOc, k, j, i) += drhoSiOc;
-        u(IEN, k, j, i) += drhoSiOc *
-          ((pthermo->GetRd() / (pthermo->GetGammad() - 1.0)) *
-           t_exchange * pthermo->GetCvRatio(iSiOc));
-
-        u(IDN, k, j, i) += drhoCO2;
-        u(IEN, k, j, i) += drhoCO2 *
-          ((pthermo->GetRd() / (pthermo->GetGammad() - 1.0)) *
-           t_exchange);
-
-        if (drho < 0) {
-          Real u1 = pmb->phydro->w(IVX, k, j, i);
-          Real u2 = pmb->phydro->w(IVY, k, j, i);
-          Real u3 = pmb->phydro->w(IVZ, k, j, i);
-          Real ke = 0.5 * (u1*u1 + u2*u2 + u3*u3);
-
-          u(IEN, k, j, i) += drho * ke;
-          u(IVX, k, j, i) += drho * u1;
-          u(IVY, k, j, i) += drho * u2;
-          u(IVZ, k, j, i) += drho * u3;
+          u(i_species, k, j, i) += drhoSiO;
+          u(IEN, k, j, i) += drhoSiO * (cv + gas_constant) * t_surface;
         }
       }
+    }
   }
 }
 
@@ -233,20 +192,8 @@ void Forcing(MeshBlock *pmb, Real const time, Real const dt,
 void Mesh::InitUserMeshData(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
 
-  SiOratio = pin->GetReal("initialcondition", "SiOratio");
-  CO2ratio = pin->GetReal("initialcondition", "CO2ratio");
-  grav = -pin->GetReal("hydro", "grav_acc1");
-
-  iSiO = pthermo->SpeciesIndex("SiO");
-  iSiOc = pthermo->SpeciesIndex("SiO(s)");
-
-  x1min = pin->GetReal("mesh", "x1min");
-  x1max = pin->GetReal("mesh", "x1max");
-  x2min = pin->GetReal("mesh", "x2min");
-  x2max = pin->GetReal("mesh", "x2max");
-
-  massflux_CO2ratio = pin->GetReal("problem", "massflux_CO2ratio");
-  radius = pin->GetReal("problem", "radius");
+  surface_temperature_min = pin->GetReal("problem", "surface_temperature_min");
+  surface_temperature_max = pin->GetReal("problem", "surface_temperature_max");
 
   EnrollUserExplicitSourceFunction(Forcing);
 }
@@ -257,34 +204,42 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 // ==========================================================
 void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
+  const int iSiO = pthermo->SpeciesIndex("SiO");
+  const int iSiOc = pthermo->SpeciesIndex("SiO(s)");
 
-  std::vector<Real> yfrac(IVX, 0.);
-  yfrac[0] = 1e-3;
-  yfrac[iSiOc] = 0.;
-  yfrac[iSiO] = 1. - yfrac[0] - yfrac[iSiOc];
-  pthermo->SetMassFractions<Real>(yfrac.data());
+  const Real grav = -pin->GetReal("hydro", "grav_acc1");
+  const Real radius = pmy_mesh->mesh_size.x1min;
+  const Real p_surface = pin->GetReal("initialcondition", "surface_pres");
+  const Real temperature = pin->GetReal("initialcondition", "temperature");
 
-  auto vapor_cond = VaporCondensation<Real>::SiOVaporCondensation();
+  Real yfrac[IVX];
+  yfrac[iSiO] = pin->GetReal("initialcondition", "SiO_massfrac");
+  yfrac[iSiOc] = pin->GetReal("initialcondition", "SiOc_massfrac");
+  yfrac[0] = 1. - yfrac[iSiO] - yfrac[iSiOc];
+
+  pthermo->SetMassFractions<Real>(yfrac);
+
+  const Real gas_constant = pthermo->GetRd() * (
+    yfrac[0]
+    + yfrac[iSiO] * pthermo->GetInvMuRatio(iSiO)
+  );
+
+  const Real inv_scale_height = grav / (gas_constant * temperature);
 
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)
       for (int i = is; i <= ie; ++i) {
-        Real t_surface = SURF_TEMP_COEFF;
-        Real z = pcoord->x1v(i) - radius;
-        Real p_surface = vapor_cond.p_eq(t_surface);
-        Real pres = p_surface * std::exp(
-          - (z * grav) / (vapor_cond.gas_constant * t_surface)
-        );
-        pthermo->EquilibrateTP(t_surface, pres);
 
+        const Real z = pcoord->x1v(i) - radius;
+        const Real pres = p_surface * std::exp(-z*inv_scale_height);
+        const Real rho = pres / (gas_constant * temperature);
+
+        phydro->w(IDN, k, j, i) = rho;
         phydro->w(iSiO, k, j, i) = yfrac[iSiO];
         phydro->w(iSiOc, k, j, i) = yfrac[iSiOc];
-        phydro->w(IDN, k, j, i) = pthermo->GetDensity();
-        phydro->w(IPR, k, j, i) = pthermo->GetPres();
+        phydro->w(IPR, k, j, i) = pres;
       }
 
   peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u,
                              pcoord, is, ie, js, je, ks, ke);
 }
-
-// reduce cfl,
