@@ -209,6 +209,41 @@ void Gravity(MeshBlock *pmb, Real const time, Real const dt,
   }
 }
 
+void PlanetaryBoundaryLayer(MeshBlock *pmb, Coordinates *pco,
+                        AthenaArray<Real> &prim, FaceField &b, Real time,
+                        Real dt, int il, int iu, int jl, int ju, int kl, int ku,
+                        int ngh) {
+  auto pthermo = Thermodynamics::GetInstance();
+  const auto vapor_cond = VaporCondensation<Real>::SiOVaporCondensation();
+  const int i_vapor = pthermo->SpeciesIndex("SiO");
+  const int i_solid = pthermo->SpeciesIndex("SiO(s)");
+
+  const Real gas_constant = pthermo->GetRd() * (
+    pthermo->GetInvMuRatio(i_vapor)
+  );
+
+  for (int k = kl; k <= ku; ++k) {
+    for (int j = jl; j <= ju; ++j) {
+
+      const Real temperature = surface_temperature(pmb->pcoord->x2v(j));
+      const Real pressure = vapor_cond.p_eq(temperature);
+      const Real density = pressure / (gas_constant * temperature);
+
+      for (int ii = 1; ii <= ngh; ++ii) {
+        const int i = il - ii;
+        prim(IDN, k, j, i) = density;
+        prim(i_vapor, k, j, i) = 1.;
+        prim(i_solid, k, j, i) = 0.;
+        prim(IVX, k, j, i) = 0.;
+        prim(IVY, k, j, i) = 0.;
+        prim(IVZ, k, j, i) = 0.;
+        prim(IPR, k, j, i) = pressure;
+      }
+    }
+  }
+}
+
+
 // ==========================================================
 // Forcing Wrapper
 // ==========================================================
@@ -232,6 +267,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   surface_grav = pin->GetReal("problem", "surface_grav");
 
   EnrollUserExplicitSourceFunction(Forcing);
+  // EnrollUserBoundaryFunction(BoundaryFace::inner_x1, PlanetaryBoundaryLayer);
 }
 
 

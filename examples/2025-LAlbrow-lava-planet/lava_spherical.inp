@@ -39,9 +39,10 @@ integrator  = rk3           # integration method
 <mesh>
 # r: radial shell
 nx1    = 120
-x1min  = 2800.E3
-x1max  = 2800.E5
+x1min  = 3400.E3
+x1max  = 3400.E5
 x1rat = 1.05
+# ix1_bc = user
 ix1_bc = reflecting
 ox1_bc = outflow
 
@@ -75,13 +76,15 @@ pfloor = 4.7733339292364615e-153
 
 <problem>
 thermodynamics_config = lava_sio_only.yaml
-surface_grav = 2.5
-radius = 2800.E3
+surface_grav = 3.4
+radius = 3400.E3
+# surface_grav = 2.5
+# radius = 2800.E3
 surface_temperature_min = 250.
-surface_temperature_max = 3000.
+surface_temperature_max = 2500.
 
 <initialcondition>
 SiO_massfrac = 1.
 SiOc_massfrac = 0.
 surface_pres = 1e-7
-temperature = 3000.
+temperature = 2500.
