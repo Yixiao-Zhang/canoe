@@ -81,10 +81,11 @@ radius = 3400.E3
 # surface_grav = 2.5
 # radius = 2800.E3
 surface_temperature_min = 250.
-surface_temperature_max = 2500.
+surface_temperature_max = 3000.
+planet_rotation = 7.3e-5
 
 <initialcondition>
 SiO_massfrac = 1.
 SiOc_massfrac = 0.
 surface_pres = 1e-7
-temperature = 2500.
+temperature = 3000.

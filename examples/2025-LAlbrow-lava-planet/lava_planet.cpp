@@ -54,6 +54,7 @@ const Real SiO_BEQ  = 70300.0;
 Real surface_temperature_min;
 Real surface_temperature_max;
 Real surface_grav;
+Real planet_rotation;
 
 const Real removal_rate_SiOc = 1e-2;
 
@@ -200,7 +201,10 @@ void Gravity(MeshBlock *pmb, Real const time, Real const dt,
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
         const Real radius = pmb->pmy_mesh->mesh_size.x1min;
-        const Real grav = surface_grav * square(radius / pmb->pcoord->x1v(i));
+        const Real grav = (
+          surface_grav * square(radius / pmb->pcoord->x1v(i))
+          - 3 * square(planet_rotation) * pmb->pcoord->x1v(i)
+        );
         const Real src = -grav * dt * w(IDN, k, j, i);
         u(IVX, k, j, i) += src;
         u(IEN, k, j, i) += src * w(IVX, k, j, i);
@@ -265,6 +269,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   surface_temperature_min = pin->GetReal("problem", "surface_temperature_min");
   surface_temperature_max = pin->GetReal("problem", "surface_temperature_max");
   surface_grav = pin->GetReal("problem", "surface_grav");
+  planet_rotation = pin->GetReal("problem", "planet_rotation");
 
   EnrollUserExplicitSourceFunction(Forcing);
   // EnrollUserBoundaryFunction(BoundaryFace::inner_x1, PlanetaryBoundaryLayer);
