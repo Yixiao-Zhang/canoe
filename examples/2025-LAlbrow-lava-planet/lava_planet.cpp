@@ -55,9 +55,51 @@ Real surface_temperature_min;
 Real surface_temperature_max;
 Real surface_grav;
 Real planet_rotation;
+Real mass_attenuation_coefficient;
+Real substellar_incoming_radiation;
 
-const Real removal_rate_SiOc = 1e-2;
+template<class Real>
+class OneStreamRadiativeTransfer {
+  public:
+    OneStreamRadiativeTransfer(
+        const int i_species,
+        const Real mass_attenuation_coefficient,
+        const Real substellar_incoming_radiation):
+          i_species(i_species),
+          mass_attenuation_coefficient(mass_attenuation_coefficient),
+          substellar_incoming_radiation(substellar_incoming_radiation) {}
 
+    void apply_forcing(const int j, const int k, const Real dt, MeshBlock *pmb,
+        AthenaArray<Real> const &w, AthenaArray<Real> &u) const {
+
+      const Real cos_zenith_angle = std::cos(pmb->pcoord->x2v(j));
+
+      if (cos_zenith_angle < 0) {
+        return;
+      }
+
+      const Real inv_cos_zenith_angle = 1./cos_zenith_angle;
+      Real flux_r = substellar_incoming_radiation * cos_zenith_angle;
+      Real flux_l;
+
+      for (int i = pmb->ie; i >= pmb->is; --i) {
+        const Real dz = pmb->pcoord->dx1f(i);
+        const Real density = w(IDN, k, j, i) * w(i_species, k, j, i);
+        const Real dtau = (
+            mass_attenuation_coefficient * inv_cos_zenith_angle
+            * density * dz
+        );
+        flux_l = flux_r * std::exp(-dtau);
+        u(IEN, k, j, i) += dt * (flux_l - flux_r) / dz;
+        flux_r = flux_l;
+      }
+    }
+
+  private:
+    const int i_species;
+    const Real mass_attenuation_coefficient;
+    const Real substellar_incoming_radiation;
+};
 
 // ==========================================================
 // VaporCondensation class
@@ -160,6 +202,7 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
         const Real dz = pmb->pcoord->dx1f(i);
         const Real delta = z < dz ? 1. / dz : 0.;
         if (delta > 0) {
+          std::cout << "Bottom: i = " << i << std::endl;
           const Real t_surface = surface_temperature(pmb->pcoord->x2v(j));
           const Real t_air = pthermo->GetTemp(w.at(k, j, i));
           const Real gas_constant = (pthermo->GetRd()
@@ -181,12 +224,11 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
             u(IVY, k, j, i) += drho * w(IVY, k, j, i);
             u(IVZ, k, j, i) += drho * w(IVZ, k, j, i);
             u(IEN, k, j, i) += drho * 0.5 * (
-              square(u(IVX, k, j, i))
-              + square(u(IVY, k, j, i))
-              + square(u(IVZ, k, j, i))
+              square(w(IVX, k, j, i))
+              + square(w(IVY, k, j, i))
+              + square(w(IVZ, k, j, i))
             );
           }
-          u(IEN, k, j, i) += removal_rate_SiOc * (t_surface - t_air) * cv * w(IDN, k, j, i);
         }
       }
     }
@@ -201,10 +243,11 @@ void Gravity(MeshBlock *pmb, Real const time, Real const dt,
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
         const Real radius = pmb->pmy_mesh->mesh_size.x1min;
-        const Real grav = (
-          surface_grav * square(radius / pmb->pcoord->x1v(i))
-          - 3 * square(planet_rotation) * pmb->pcoord->x1v(i)
-        );
+        // const Real grav = (
+        //   surface_grav * square(radius / pmb->pcoord->x1v(i))
+        //   - 3 * square(planet_rotation) * pmb->pcoord->x1v(i)
+        // );
+        const Real grav = surface_grav;
         const Real src = -grav * dt * w(IDN, k, j, i);
         u(IVX, k, j, i) += src;
         u(IEN, k, j, i) += src * w(IVX, k, j, i);
@@ -213,36 +256,18 @@ void Gravity(MeshBlock *pmb, Real const time, Real const dt,
   }
 }
 
-void PlanetaryBoundaryLayer(MeshBlock *pmb, Coordinates *pco,
-                        AthenaArray<Real> &prim, FaceField &b, Real time,
-                        Real dt, int il, int iu, int jl, int ju, int kl, int ku,
-                        int ngh) {
+void RadiativeTransfer(MeshBlock *pmb, Real const time, Real const dt,
+             AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+             AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+             AthenaArray<Real> &s) {
   auto pthermo = Thermodynamics::GetInstance();
-  const auto vapor_cond = VaporCondensation<Real>::SiOVaporCondensation();
-  const int i_vapor = pthermo->SpeciesIndex("SiO");
-  const int i_solid = pthermo->SpeciesIndex("SiO(s)");
-
-  const Real gas_constant = pthermo->GetRd() * (
-    pthermo->GetInvMuRatio(i_vapor)
-  );
-
-  for (int k = kl; k <= ku; ++k) {
-    for (int j = jl; j <= ju; ++j) {
-
-      const Real temperature = surface_temperature(pmb->pcoord->x2v(j));
-      const Real pressure = vapor_cond.p_eq(temperature);
-      const Real density = pressure / (gas_constant * temperature);
-
-      for (int ii = 1; ii <= ngh; ++ii) {
-        const int i = il - ii;
-        prim(IDN, k, j, i) = density;
-        prim(i_vapor, k, j, i) = 1.;
-        prim(i_solid, k, j, i) = 0.;
-        prim(IVX, k, j, i) = 0.;
-        prim(IVY, k, j, i) = 0.;
-        prim(IVZ, k, j, i) = 0.;
-        prim(IPR, k, j, i) = pressure;
-      }
+  const int i_species = pthermo->SpeciesIndex("SiO");
+  const OneStreamRadiativeTransfer<Real> rt(i_species,
+    mass_attenuation_coefficient,
+    substellar_incoming_radiation);
+  for (int k = pmb->ks; k <= pmb->ke; ++k) {
+    for (int j = pmb->js; j <= pmb->je; ++j) {
+      rt.apply_forcing(j, k, dt, pmb, w, u);
     }
   }
 }
@@ -257,6 +282,7 @@ void Forcing(MeshBlock *pmb, Real const time, Real const dt,
              AthenaArray<Real> &s) {
   BottomInjection(pmb, time, dt, w, r, bcc, u, s);
   Gravity(pmb, time, dt, w, r, bcc, u, s);
+  // RadiativeTransfer(pmb, time, dt, w, r, bcc, u, s);
 }
 
 
@@ -270,9 +296,10 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   surface_temperature_max = pin->GetReal("problem", "surface_temperature_max");
   surface_grav = pin->GetReal("problem", "surface_grav");
   planet_rotation = pin->GetReal("problem", "planet_rotation");
+  mass_attenuation_coefficient = pin->GetReal("problem", "mass_attenuation_coefficient");
+  substellar_incoming_radiation = pin->GetReal("problem", "substellar_incoming_radiation");
 
   EnrollUserExplicitSourceFunction(Forcing);
-  // EnrollUserBoundaryFunction(BoundaryFace::inner_x1, PlanetaryBoundaryLayer);
 }
 
 
@@ -300,7 +327,8 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     + yfrac[iSiO] * pthermo->GetInvMuRatio(iSiO)
   );
 
-  const Real inv_scale_height = surface_grav / (gas_constant * temperature);
+  // const Real inv_scale_height = surface_grav / (gas_constant * temperature);
+  const Real inv_scale_height = 0.;
 
   for (int k = ks; k <= ke; ++k)
     for (int j = js; j <= je; ++j)

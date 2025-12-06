@@ -78,14 +78,14 @@ pfloor = 4.7733339292364615e-153
 thermodynamics_config = lava_sio_only.yaml
 surface_grav = 3.4
 radius = 3400.E3
-# surface_grav = 2.5
-# radius = 2800.E3
-surface_temperature_min = 250.
-surface_temperature_max = 3000.
-planet_rotation = 7.3e-5
+surface_temperature_min = 2500
+surface_temperature_max = 2500.
+planet_rotation = 0.
+mass_attenuation_coefficient = 0.1
+substellar_incoming_radiation = 0.
 
 <initialcondition>
 SiO_massfrac = 1.
 SiOc_massfrac = 0.
 surface_pres = 1e-7
-temperature = 3000.
+temperature = 2500.
