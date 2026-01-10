@@ -15,6 +15,7 @@
 // snap
 #include <snap/thermodynamics/atm_thermodynamics.hpp>
 
+#include <mpi.h>
 #include <random>
 
 Real driving_acceleration;
@@ -197,6 +198,12 @@ inline auto WaterIceEOS() {
   return water_ice;
 }
 
+int get_mpi_rank(const MPI_Comm mpi_world = MPI_COMM_WORLD) {
+  int rank;
+  MPI_Comm_rank(mpi_world, &rank);
+  return rank;
+}
+
 
 void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
@@ -218,9 +225,6 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   const Real uc = 0.5 * square(yd) * driving_acceleration / nu_iso;
 
-  std::mt19937 mt(1234);
-  std::uniform_real_distribution<Real> phi(0., 2 * M_PI);
-
   // populate to 3D mesh
   for (int k = ks; k <= ke; ++k) {
     for (int j = js; j <= je; ++j) {
@@ -236,4 +240,18 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, is, ie,
                              js, je, ks, ke);
+
+  std::mt19937 gen(1234 + 17 * get_mpi_rank());
+  std::uniform_real_distribution<Real> phi_distribution(0., 2 * M_PI);
+
+  for (int k = ks; k <= ke; ++k) {
+    for (int j = js; j <= je; ++j) {
+      for (int i = is; i <= ie; ++i) {
+        const Real phi = phi_distribution(gen);
+        const Real pert = 0.2 * phydro->u(IVX, k, j, i);
+        phydro->u(IVX, k, j, i) += pert * std::sin(phi);
+        phydro->u(IVY, k, j, i) += pert * std::cos(phi);
+      }
+    }
+  }
 }

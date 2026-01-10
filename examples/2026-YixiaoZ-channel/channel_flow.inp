@@ -26,7 +26,7 @@ dt          = 0.01          # time increment
 
 <output4>
 file_type   = rst           # History data dump
-dt          = 1000.         # time increment between outputs
+dt          = 1.            # time increment between outputs
 
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
@@ -48,7 +48,7 @@ x2max       = 0.2
 ix2_bc      = reflecting
 ox2_bc      = reflecting
 
-nx3         = 1
+nx3         = 96
 x3min       = 0.
 x3max       = 0.418879
 ix3_bc      = periodic
@@ -57,16 +57,15 @@ ox3_bc      = periodic
 <meshblock>
 nx1         = 16
 nx2         = 16
-nx3         = 1
+nx3         = 16
 
 <hydro>
 gamma      = 1.4        # gamma = C_pd/C_vd
-implicit_flag = 1
+implicit_flag = 0
 
 <problem>
 thermodynamics_config = geyser_h2o.yaml
 
-wall_temperature = 273.16
 nu_iso = 2e-3
 kappa_iso = 2e-3
 
