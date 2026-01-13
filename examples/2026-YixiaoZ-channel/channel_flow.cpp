@@ -17,97 +17,9 @@
 
 #include <random>
 
-Real driving_acceleration;
-
 template<typename T>
 auto square(const T x) {
   return x * x;
-}
-
-void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(1);
-  SetUserOutputVariableName(0, "temp");
-}
-
-void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
-  auto pthermo = Thermodynamics::GetInstance();
-  auto &w = phydro->w;
-
-  for (int k = ks; k <= ke; ++k)
-    for (int j = js; j <= je; ++j)
-      for (int i = is; i <= ie; ++i) {
-        user_out_var(0, k, j, i) = pthermo->GetTemp(w.at(k, j, i));
-      }
-}
-
-inline bool is_wall(MeshBlock *pmb, const int j) {
-  const Real x2 = pmb->pcoord->x2v(j);
-  const Real dx2 = pmb->pcoord->dx2f(j);
-  return (
-    (
-      x2 < pmb->pmy_mesh->mesh_size.x2min + dx2
-    ) || (
-      x2 > pmb->pmy_mesh->mesh_size.x2max - dx2
-    )
-  );
-}
-
-
-void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
-                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-                     AthenaArray<Real> &s) {
-  auto pthermo = Thermodynamics::GetInstance();
-
-  const Real nu_iso = pmb->phydro->hdif.nu_iso;
-
-  for (int k = pmb->ks; k <= pmb->ke; ++k) {
-    for (int j = pmb->js; j <= pmb->je; ++j) {
-      for (int i = pmb->is; i <= pmb->ie; ++i) {
-
-        if (is_wall(pmb, j)) {
-          const auto w_kji = w.at(k, j, i);
-          const Real dy = pmb->pcoord->dx2f(j);
-          const Real r = -dt * nu_iso / square(0.5 * dy);
-
-          const int nvs[] = {IVX, IVZ};
-          for (auto n: nvs) {
-            u(n, k, j, i) += r * w_kji[n] * w_kji[IDN];
-          }
-        }
-      }
-    }
-  }
-}
-
-void DrivingAcceleration(MeshBlock *pmb, Real const time, Real const dt,
-                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-                     AthenaArray<Real> &s) {
-  for (int k = pmb->ks; k <= pmb->ke; ++k) {
-    for (int j = pmb->js; j <= pmb->je; ++j) {
-      for (int i = pmb->is; i <= pmb->ie; ++i) {
-        u(IVX, k, j, i) += dt * driving_acceleration * w(IDN, k, j, i);
-      }
-    }
-  }
-}
-
-void Forcing(MeshBlock *pmb, Real const time, Real const dt,
-             AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-             AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-             AthenaArray<Real> &s) {
-  WallInteraction(pmb, time, dt, w, r, bcc, u, s);
-  DrivingAcceleration(pmb, time, dt, w, r, bcc, u, s);
-}
-
-void Mesh::InitUserMeshData(ParameterInput *pin) {
-  auto pthermo = Thermodynamics::GetInstance();
-
-  // index
-  driving_acceleration = pin->GetReal("problem", "driving_acceleration");
-
-  EnrollUserExplicitSourceFunction(Forcing);
 }
 
 template<class Real>
@@ -198,37 +110,228 @@ inline auto WaterIceEOS() {
 }
 
 
-void MeshBlock::ProblemGenerator(ParameterInput *pin) {
+void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
+  AllocateUserOutputVariables(1);
+  SetUserOutputVariableName(0, "temp");
+}
 
-  const auto mesh_size = pmy_mesh->mesh_size;
-  const Real yc = 0.5 * (mesh_size.x2max + mesh_size.x2min);
-  const Real yd = 0.5 * (mesh_size.x2max - mesh_size.x2min);
+void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
+  auto pthermo = Thermodynamics::GetInstance();
+  auto &w = phydro->w;
 
+  for (int k = ks; k <= ke; ++k) {
+    for (int j = js; j <= je; ++j) {
+      for (int i = is; i <= ie; ++i) {
+        user_out_var(0, k, j, i) = pthermo->GetTemp(w.at(k, j, i));
+      }
+    }
+  }
+}
+
+inline Real get_xv(MeshBlock *pmb, const int axis,
+      const int k, const int j, const int i) {
+  switch (axis) {
+    case 1:
+      return pmb->pcoord->x1v(i);
+    case 2:
+      return pmb->pcoord->x2v(j);
+    case 3:
+      return pmb->pcoord->x3v(k);
+    default:
+      throw std::runtime_error("Unknown Axis");
+  }
+}
+
+inline Real get_dxf(MeshBlock *pmb, const int axis,
+      const int k, const int j, const int i) {
+  switch (axis) {
+    case 1:
+      return pmb->pcoord->dx1f(i);
+    case 2:
+      return pmb->pcoord->dx2f(j);
+    case 3:
+      return pmb->pcoord->dx3f(k);
+    default:
+      throw std::runtime_error("Unknown Axis");
+  }
+}
+
+inline Real get_xmin(MeshBlock *pmb, const int axis) {
+  switch (axis) {
+    case 1:
+      return pmb->pmy_mesh->mesh_size.x1min;
+    case 2:
+      return pmb->pmy_mesh->mesh_size.x2min;
+    case 3:
+      return pmb->pmy_mesh->mesh_size.x3min;
+    default:
+      throw std::runtime_error("Unknown Axis");
+  }
+}
+
+inline Real get_xmax(MeshBlock *pmb, const int axis) {
+  switch (axis) {
+    case 1:
+      return pmb->pmy_mesh->mesh_size.x1max;
+    case 2:
+      return pmb->pmy_mesh->mesh_size.x2max;
+    case 3:
+      return pmb->pmy_mesh->mesh_size.x3max;
+    default:
+      throw std::runtime_error("Unknown Axis");
+  }
+}
+
+inline bool is_left_boundary(MeshBlock *pmb, const int axis,
+      const int k, const int j, const int i) {
+  return get_xv(pmb, axis, k, j, i) < (
+    get_xmin(pmb, axis) + get_dxf(pmb, axis, k, j, i)
+  );
+}
+
+inline bool is_right_boundary(MeshBlock *pmb, const int axis,
+      const int k, const int j, const int i) {
+  return get_xv(pmb, axis, k, j, i) > (
+    get_xmax(pmb, axis) + get_dxf(pmb, axis, k, j, i)
+  );
+}
+
+inline bool is_boundary(MeshBlock *pmb, const int axis,
+      const int k, const int j, const int i) {
+  return (
+    is_left_boundary(pmb, axis, k, j, i)
+    || is_right_boundary(pmb, axis, k, j, i)
+  );
+}
+
+const int i_wall = 2;
+const int i_flow = 1;
+
+void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
+                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+                     AthenaArray<Real> &s) {
+  auto pthermo = Thermodynamics::GetInstance();
+
+  const Real nu_iso = pmb->phydro->hdif.nu_iso;
+
+  for (int k = pmb->ks; k <= pmb->ke; ++k) {
+    for (int j = pmb->js; j <= pmb->je; ++j) {
+      for (int i = pmb->is; i <= pmb->ie; ++i) {
+        if (is_boundary(pmb, i_wall, k, j, i)) {
+          const auto w_kji = w.at(k, j, i);
+          const Real d = get_dxf(pmb, i_wall, k, j, i);
+          const Real r = -dt * nu_iso / square(0.5 * d);
+
+          const int nvs[] = {IVX, IVY, IVZ};
+          for (auto n: nvs) {
+            u(n, k, j, i) += r * w_kji[n] * w_kji[IDN];
+          }
+        }
+      }
+    }
+  }
+}
+
+void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
+                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+                     AthenaArray<Real> &s) {
   auto pthermo = Thermodynamics::GetInstance();
   auto water_ice_eos = WaterIceEOS();
-  const Real ice_fraction = pin->GetReal("initialcondition", "ice_fraction");
-  const Real temperature = pin->GetReal("initialcondition", "temperature");
-  const Real pressure = water_ice_eos.pres_sat(temperature);
-  const Real density = (
-    water_ice_eos.vapor_density_sat(temperature)
-    / (1. - ice_fraction)
-  );
+  const int iH2O = pthermo->SpeciesIndex("H2O");
 
-  const Real nu_iso = pin->GetReal("problem", "nu_iso");
+  for (int k = pmb->ks; k <= pmb->ke; ++k) {
+    for (int j = pmb->js; j <= pmb->je; ++j) {
+      for (int i = pmb->is; i <= pmb->ie; ++i) {
+        if (is_left_boundary(pmb, i_flow, k, j, i)) {
+          const Real p = pmb->phydro->w(IPR, k, j, i);
+          const Real d = get_dxf(pmb, i_flow, k, j, i);
+          const Real drho= dt * (
+              std::max(water_ice_eos.pres3 - p, 0.)
+              / (
+                sqrt(
+                    2 * M_PI * water_ice_eos.gas.gas_constant
+                    * water_ice_eos.temp3
+                ) * d
+              )
+          );
+          u(iH2O, k, j, i) += drho;
+          u(IEN, k, j, i) += (
+              drho * water_ice_eos.gas.specific_enthalpy(water_ice_eos.temp3)
+          );
+        }
+      }
+    }
+  }
+}
 
-  const Real uc = 0.5 * square(yd) * driving_acceleration / nu_iso;
+void TopSuction(MeshBlock *pmb, Real const time, Real const dt,
+                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+                     AthenaArray<Real> &s) {
+  auto pthermo = Thermodynamics::GetInstance();
+  auto water_ice_eos = WaterIceEOS();
+  const int iH2O = pthermo->SpeciesIndex("H2O");
 
-  std::mt19937 mt(1234);
-  std::uniform_real_distribution<Real> phi(0., 2 * M_PI);
+  const Real velocity_scale = 400.;
+  const Real rate = velocity_scale / get_xmax(pmb, i_flow);
+
+  for (int k = pmb->ks; k <= pmb->ke; ++k) {
+    for (int j = pmb->js; j <= pmb->je; ++j) {
+      for (int i = pmb->is; i <= pmb->ie; ++i) {
+        if (get_xv(pmb, i_flow, k, j, i) > 0.) {
+          const auto w_kji = w.at(k, j, i);
+          const Real drho = -dt * rate * w_kji[IDN] * w_kji[iH2O];
+
+          u(iH2O, k, j, i) += drho;
+          const int nvs[] = {IVX, IVY, IVZ};
+          Real b = water_ice_eos.gas.specific_enthalpy(pthermo->GetTemp(w_kji));
+
+          for (auto n: nvs) {
+            u(n, k, j, i) += drho * w_kji[n];
+            b += 0.5 * square(w_kji[n]);
+          }
+          u(IEN, k, j, i) += drho * b;
+        }
+      }
+    }
+  }
+}
+
+
+
+void Forcing(MeshBlock *pmb, Real const time, Real const dt,
+             AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+             AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+             AthenaArray<Real> &s) {
+  WallInteraction(pmb, time, dt, w, r, bcc, u, s);
+  BottomInjection(pmb, time, dt, w, r, bcc, u, s);
+  TopSuction(pmb, time, dt, w, r, bcc, u, s);
+}
+
+void Mesh::InitUserMeshData(ParameterInput *pin) {
+  auto pthermo = Thermodynamics::GetInstance();
+
+  EnrollUserExplicitSourceFunction(Forcing);
+}
+
+
+void MeshBlock::ProblemGenerator(ParameterInput *pin) {
+
+  auto pthermo = Thermodynamics::GetInstance();
+  auto const water_ice_eos = WaterIceEOS();
+  const Real frac = 1e-8;
+  const Real temperature = water_ice_eos.temp3;
+  const Real pressure = frac * water_ice_eos.pres_sat(temperature);
+  const Real density = water_ice_eos.gas.density(temperature, pressure);
 
   // populate to 3D mesh
   for (int k = ks; k <= ke; ++k) {
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
         phydro->w(IDN, k, j, i) = density;
-        phydro->w(pthermo->SpeciesIndex("H2O"), k, j, i) = 1. - ice_fraction;
-        phydro->w(pthermo->SpeciesIndex("H2O(s)"), k, j, i) = ice_fraction;
-        phydro->w(IVX, k, j, i) = uc * (1. - square((pcoord->x2v(j) - yc) / yd));
+        phydro->w(pthermo->SpeciesIndex("H2O"), k, j, i) = 1.;
         phydro->w(IPR, k, j, i) = pressure;
       }
     }
