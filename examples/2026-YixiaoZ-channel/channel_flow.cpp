@@ -192,7 +192,7 @@ inline bool is_left_boundary(MeshBlock *pmb, const int axis,
 inline bool is_right_boundary(MeshBlock *pmb, const int axis,
       const int k, const int j, const int i) {
   return get_xv(pmb, axis, k, j, i) > (
-    get_xmax(pmb, axis) + get_dxf(pmb, axis, k, j, i)
+    get_xmax(pmb, axis) - get_dxf(pmb, axis, k, j, i)
   );
 }
 

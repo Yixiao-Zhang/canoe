@@ -42,9 +42,9 @@ x1max       = 280.
 ix1_bc      = reflecting
 ox1_bc      = outflow
 
-nx2         = 1
-x2min       = 0.
-x2max       = 1
+nx2         = 32
+x2min       = -0.1
+x2max       = 0.1
 ix2_bc      = reflecting
 ox2_bc      = reflecting
 
@@ -55,8 +55,8 @@ ix3_bc      = periodic
 ox3_bc      = periodic
 
 <meshblock>
-nx1         = 128
-nx2         = 1
+nx1         = 32
+nx2         = 32
 nx3         = 1
 
 <hydro>
