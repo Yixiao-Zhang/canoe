@@ -29,24 +29,24 @@ file_type   = rst           # History data dump
 dt          = 10000.        # time increment between outputs
 
 <time>
-cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
+cfl_number  = 0.005         # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
 tlim        = 100           # time limit
 xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 <mesh>
-nx1         = 128
-x1min       = -1000.
-x1max       = 280.
-ix1_bc      = reflecting
-ox1_bc      = outflow
-
-nx2         = 32
-x2min       = -0.1
-x2max       = 0.1
+nx2         = 128
+x2min       = -1000.
+x2max       = 280.
 ix2_bc      = reflecting
-ox2_bc      = reflecting
+ox2_bc      = outflow
+
+nx1         = 32
+x1min       = -0.1
+x1max       = 0.1
+ix1_bc      = reflecting
+ox1_bc      = reflecting
 
 nx3         = 1
 x3min       = 0.
@@ -61,7 +61,7 @@ nx3         = 1
 
 <hydro>
 gamma      = 1.4        # gamma = C_pd/C_vd
-implicit_flag = 0
+implicit_flag = 1
 
 <problem>
 thermodynamics_config = geyser_h2o.yaml
