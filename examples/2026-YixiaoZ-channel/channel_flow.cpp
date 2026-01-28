@@ -16,6 +16,11 @@
 #include <snap/thermodynamics/atm_thermodynamics.hpp>
 
 #include <random>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <vector>
 
 #include "wall_boundary_condition.hpp"
 
@@ -411,7 +416,15 @@ Real get_massflux(StrideIterator<Real*> w) {
 }
 
 Real get_energy(StrideIterator<Real*> w) {
-  return w[IEN];
+  auto pthermo = Thermodynamics::GetInstance();
+  return w[IDN] * (
+    pthermo->GetInternalEnergy(w)
+    + 0.5 * (
+      square(w[IVX])
+      + square(w[IVY])
+      + square(w[IVZ])
+    )
+  );
 }
 
 void Nudge(MeshBlock *pmb, Real const time, Real const dt,
@@ -420,10 +433,10 @@ void Nudge(MeshBlock *pmb, Real const time, Real const dt,
                      AthenaArray<Real> &s) {
 
   auto pthermo = Thermodynamics::GetInstance();
-  const int iH2O = pthermo->SpeciesIndex("H2O");
+  const int i_vapor = pthermo->SpeciesIndex("H2O");
 
   const Real cv = (
-    pthermo->GetRd() * pthermo->GetCvRatio(iH2O)
+    pthermo->GetRd() * pthermo->GetCvRatio(i_vapor)
     / (pthermo->GetGammad() - 1.0)
   );
 
@@ -435,22 +448,23 @@ void Nudge(MeshBlock *pmb, Real const time, Real const dt,
   const static Real prescribed_massflux = mean_massflux;
   const static Real prescribed_energy = mean_energy;
 
-  const Real relaxation_rate = 2e-2;
+  const Real relaxation_rate = 0.2;
 
   const Real src_density = relaxation_rate * (
     prescribed_density - mean_density);
-  const Real src_massflux = relaxation_rate * (
-    prescribed_massflux - mean_massflux);
+  const Real src_velocity = relaxation_rate * (
+    prescribed_massflux - mean_massflux) / mean_density;
   const Real src_energy = relaxation_rate * (
-    prescribed_energy - mean_energy);
+    prescribed_energy - mean_energy) / mean_density;
 
   for (int k = pmb->ks; k <= pmb->ke; ++k) {
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
         const auto w_kji = w.at(k, j, i);
-        u(IDN, k, j, i) += src_density;
-        u(IVX + i_flow - 1, k, j, i) += src_massflux;
-        u(IEN, k, j, i) += src_energy;
+        const Real density = w_kji[IDN];
+        u(i_vapor, k, j, i) += src_density;
+        u(IVX + i_flow - 1, k, j, i) += src_velocity * density;
+        u(IEN, k, j, i) += src_energy * density;
       }
     }
   }
@@ -480,12 +494,13 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(5);
+  AllocateUserOutputVariables(6);
   SetUserOutputVariableName(0, "temp");
   SetUserOutputVariableName(1, "ice_temp");
   SetUserOutputVariableName(2, "evaporation");
   SetUserOutputVariableName(3, "sensible_heat_flux");
   SetUserOutputVariableName(4, "total_energy_flux");
+  SetUserOutputVariableName(5, "energy_density");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
@@ -506,11 +521,15 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
         user_out_var(2, k, j, i) = g_evaporation[i_out];
         user_out_var(3, k, j, i) = g_sensible_heat_flux[i_out];
         user_out_var(4, k, j, i) = g_total_energy_flux[i_out];
+        user_out_var(5, k, j, i) = get_energy(w.at(k, j, i));
       }
     }
   }
 }
 
+#define PG_INIT_USING_TEXT_FILES
+
+#ifdef PG_INIT_USING_ANALYTICAL_SOLUTION
 void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   const auto mesh_size = pmy_mesh->mesh_size;
@@ -559,3 +578,79 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
     }
   }
 }
+#endif
+
+#ifdef PG_INIT_USING_TEXT_FILES
+
+auto read_vector(const std::string &file_name) {
+  std::string line;
+  Real value;
+  std::vector<Real> values;
+
+  std::ifstream file(file_name);
+
+  if (!file.is_open()) {
+    throw std::runtime_error("File does not exist");
+  }
+
+  while (std::getline(file, line)) {
+      std::istringstream ss(line);
+      if (ss >> value) {
+        values.push_back(value);
+      } else {
+        throw std::runtime_error("Illegal value");
+      }
+  }
+  file.close();
+  return values;
+}
+
+void MeshBlock::ProblemGenerator(ParameterInput *pin) {
+  auto pthermo = Thermodynamics::GetInstance();
+
+  // {
+  //   auto w = phydro->w.at(ks, js, is);
+  //   auto water_ice_eos = WaterIceEOS();
+  //   Real temp = water_ice_eos.temp3;
+
+  //   w[IDN] = water_ice_eos.vapor_density_sat(temp);
+  //   w[pthermo->SpeciesIndex("H2O")] = 1.;
+  //   w[pthermo->SpeciesIndex("H2O(s)")] = 0.;
+  //   w[IPR] = water_ice_eos.pres_sat(temp);
+  //   std::cout << pthermo->GetInternalEnergy(w) << std::endl;
+
+  //   Real ice_frac = 0.999;
+
+  //   w[IDN] = water_ice_eos.vapor_density_sat(temp) / (1. - ice_frac);
+  //   w[pthermo->SpeciesIndex("H2O")] = 1. - ice_frac;
+  //   w[pthermo->SpeciesIndex("H2O(s)")] = ice_frac;
+  //   w[IPR] = water_ice_eos.pres_sat(temp);
+  //   std::cout << pthermo->GetInternalEnergy(w) << std::endl;
+  //   std::exit(0);
+  // }
+
+  auto init_density = read_vector("init_density.txt");
+  auto init_icefraction = read_vector("init_icefraction.txt");
+  auto init_velocity = read_vector("init_velocity.txt");
+  auto init_pressure = read_vector("init_pressure.txt");
+
+  // populate to 3D mesh
+  for (int k = ks; k <= ke; ++k) {
+    for (int j = js; j <= je; ++j) {
+      for (int i = is; i <= ie; ++i) {
+        const int l = (
+            get_axis_i(i_wall, k, j, i) - get_axis_i(i_wall, ks, js, is)
+        );
+        phydro->w(IDN, k, j, i) = init_density[l];
+        phydro->w(pthermo->SpeciesIndex("H2O"), k, j, i) = 1. - init_icefraction[l];
+        phydro->w(pthermo->SpeciesIndex("H2O(s)"), k, j, i) = init_icefraction[l];
+        phydro->w(IVX + i_flow - 1, k, j, i) = init_velocity[l];
+        phydro->w(IPR, k, j, i) = init_pressure[l];
+      }
+    }
+  }
+
+  peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, is, ie,
+                              js, je, ks, ke);
+}
+#endif
