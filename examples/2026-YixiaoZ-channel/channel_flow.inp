@@ -67,8 +67,8 @@ implicit_flag = 0
 thermodynamics_config = geyser_h2o.yaml
 
 wall_temperature = 273.16
-nu_iso = 2e-3
-kappa_iso = 6e-3
+nu_iso = 12e-6
+kappa_iso = 12e-6
 
 <initialcondition>
 
