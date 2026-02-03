@@ -1,0 +1,69 @@
+diff --git a/src/hydro/hydro_diffusion/conduction.cpp b/src/hydro/hydro_diffusion/conduction.cpp
+index 8b55a823..28590c6a 100644
+--- a/src/hydro/hydro_diffusion/conduction.cpp
++++ b/src/hydro/hydro_diffusion/conduction.cpp
+@@ -19,6 +19,22 @@
+ #include "../hydro.hpp"
+ #include "hydro_diffusion.hpp"
+ 
++#include <snap/stride_iterator.hpp>
++
++inline Real get_temp(StrideIterator<Real*> w) {
++  constexpr int i_water_vapor = 1;
++
++  constexpr double Avogadro = 6.02214076e23;
++  constexpr double Boltzmann = 1.380649e-23;
++  constexpr Real atomic_mass_H = 1.008e-3;
++  constexpr Real atomic_mass_O = 15.999e-3;
++  constexpr Real universial_gas_constant = Avogadro * Boltzmann;
++  constexpr Real water_mw = 2 * atomic_mass_H  + atomic_mass_O;
++  constexpr Real water_gas_constant = universial_gas_constant / water_mw;
++
++  return w[IPR] / (water_gas_constant * w[IDN] * w[i_water_vapor]);
++}
++
+ //---------------------------------------------------------------------------------------
+ //! Calculate isotropic thermal conduction
+ 
+@@ -42,14 +58,15 @@ void HydroDiffusion::ThermalFluxIso(
+         jl = js - 1, ju = je + 1, kl = ks - 1, ku = ke + 1;
+     }
+   }
++
+   for (int k=kl; k<=ku; ++k) {
+     for (int j=jl; j<=ju; ++j) {
+ #pragma omp simd private(kappaf, denf, dTdx)
+       for (int i=is; i<=ie+1; ++i) {
+         kappaf = 0.5*(kappa(DiffProcess::iso,k,j,i) + kappa(DiffProcess::iso,k,j,i-1));
+         denf = 0.5*(p(IDN,k,j,i) + p(IDN,k,j,i-1));
+-        dTdx = (p(IPR,k,j,i)/p(IDN,k,j,i) - p(IPR,k,j,i-1)/
+-                p(IDN,k,j,i-1))/pco_->dx1v(i-1);
++        dTdx = (get_temp(p.at(k,j,i))
++                - get_temp(p.at(k,j,i-1)))/pco_->dx1v(i-1);
+         x1flux(k,j,i) -= kappaf*denf*dTdx;
+       }
+     }
+@@ -71,8 +88,9 @@ void HydroDiffusion::ThermalFluxIso(
+         for (int i=il; i<=iu; ++i) {
+           kappaf = 0.5*(kappa(DiffProcess::iso,k,j,i) + kappa(DiffProcess::iso,k,j-1,i));
+           denf = 0.5*(p(IDN,k,j,i) + p(IDN,k,j-1,i));
+-          dTdy = (p(IPR,k,j,i)/p(IDN,k,j,i) - p(IPR,k,j-1,i)/
+-                  p(IDN,k,j-1,i))/pco_->h2v(i)/pco_->dx2v(j-1);
++          dTdy = (get_temp(p.at(k,j,i))
++                  - get_temp(p.at(k,j-1,i))
++                  )/pco_->h2v(i)/pco_->dx2v(j-1);
+           x2flux(k,j,i) -= kappaf*denf*dTdy;
+         }
+       }
+@@ -95,8 +113,9 @@ void HydroDiffusion::ThermalFluxIso(
+         for (int i=il; i<=iu; ++i) {
+           kappaf = 0.5*(kappa(DiffProcess::iso,k,j,i) + kappa(DiffProcess::iso,k-1,j,i));
+           denf = 0.5*(p(IDN,k,j,i) + p(IDN,k-1,j,i));
+-          dTdz = (p(IPR,k,j,i)/p(IDN,k,j,i) - p(IPR,k-1,j,i)/
+-                  p(IDN,k-1,j,i))/pco_->dx3v(k-1)/pco_->h31v(i)/pco_->h32v(j);
++          dTdz = (get_temp(p.at(k,j,i))
++                  - get_temp(p.at(k-1,j,i))
++                  )/pco_->dx3v(k-1)/pco_->h31v(i)/pco_->h32v(j);
+           x3flux(k,j,i) -= kappaf*denf*dTdz;
+         }
+       }
