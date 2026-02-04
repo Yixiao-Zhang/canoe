@@ -51,11 +51,6 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
   const Real nu_iso = pmb->phydro->hdif.nu_iso;
   const Real kappa_iso = pmb->phydro->hdif.kappa_iso;
 
-  const Real cv = (
-      pthermo->GetRd() / (pthermo->GetGammad() - 1.)
-      * pthermo->GetCvRatio(i_vapor)
-  );
-
   const Real cp = (
       pthermo->GetRd() * (
         (pthermo->GetCvRatio(i_vapor) / (pthermo->GetGammad() - 1.))
@@ -83,7 +78,7 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
 
           if (distance > 0) {
             auto solver = WallBoundaryCondition::build_solver(
-              0.5 * dx, distance, kappa_iso * cv
+              0.5 * dx, distance, kappa_iso * cp
             );
 
             Real air_temp = pthermo->GetTemp(w_kji);
@@ -219,11 +214,6 @@ void Nudge(MeshBlock *pmb, Real const time, Real const dt,
 
   auto pthermo = Thermodynamics::GetInstance();
 
-  const Real cv = (
-    pthermo->GetRd() * pthermo->GetCvRatio(i_vapor)
-    / (pthermo->GetGammad() - 1.0)
-  );
-
   const Real mean_density = get_domain_average(get_density, pmb, w);
   const Real mean_massflux = get_domain_average(get_massflux, pmb, w);
   const Real mean_energy = get_domain_average(get_energy, pmb, w);
@@ -275,16 +265,19 @@ void WaterVaporConduction(HydroDiffusion *phdif, MeshBlock *pmb, const AthenaArr
                      const AthenaArray<Real> &bcc,
                      int is, int ie, int js, int je, int ks, int ke) {
   auto pthermo = Thermodynamics::GetInstance();
-  const Real cv = (
-      pthermo->GetRd() / (pthermo->GetGammad() - 1.)
-      * pthermo->GetCvRatio(i_vapor)
+
+  const Real cp = (
+      pthermo->GetRd() * (
+        (pthermo->GetCvRatio(i_vapor) / (pthermo->GetGammad() - 1.))
+        + pthermo->GetInvMuRatio(i_vapor)
+      )
   );
 
   for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=is; i<=ie; ++i) {
         phdif->kappa(HydroDiffusion::DiffProcess::iso, k, j, i) = (
-          phdif->kappa_iso * cv
+          phdif->kappa_iso * cp
         );
       }
     }
@@ -314,7 +307,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
     throw std::runtime_error("i_vapor does not match");
   }
 
-  EnrollUserExplicitSourceFunction(Forcing);
+  // EnrollUserExplicitSourceFunction(Forcing);
   EnrollViscosityCoefficient(WaterVaporViscosity);
   EnrollConductionCoefficient(WaterVaporConduction);
 }

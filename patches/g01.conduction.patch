@@ -1,5 +1,5 @@
 diff --git a/src/hydro/hydro_diffusion/conduction.cpp b/src/hydro/hydro_diffusion/conduction.cpp
-index 8b55a823..28590c6a 100644
+index 8b55a823..c537b7e2 100644
 --- a/src/hydro/hydro_diffusion/conduction.cpp
 +++ b/src/hydro/hydro_diffusion/conduction.cpp
 @@ -19,6 +19,22 @@
@@ -25,45 +25,71 @@ index 8b55a823..28590c6a 100644
  //---------------------------------------------------------------------------------------
  //! Calculate isotropic thermal conduction
  
-@@ -42,14 +58,15 @@ void HydroDiffusion::ThermalFluxIso(
+@@ -30,7 +46,7 @@ void HydroDiffusion::ThermalFluxIso(
+   int il, iu, jl, ju, kl, ku;
+   int is = pmb_->is; int js = pmb_->js; int ks = pmb_->ks;
+   int ie = pmb_->ie; int je = pmb_->je; int ke = pmb_->ke;
+-  Real kappaf, denf, dTdx, dTdy, dTdz;
++  Real kappaf, dTdx, dTdy, dTdz;
+ 
+   // i-direction
+   jl = js, ju = je, kl = ks, ku = ke;
+@@ -42,15 +58,15 @@ void HydroDiffusion::ThermalFluxIso(
          jl = js - 1, ju = je + 1, kl = ks - 1, ku = ke + 1;
      }
    }
 +
    for (int k=kl; k<=ku; ++k) {
      for (int j=jl; j<=ju; ++j) {
- #pragma omp simd private(kappaf, denf, dTdx)
+-#pragma omp simd private(kappaf, denf, dTdx)
++#pragma omp simd private(kappaf, dTdx)
        for (int i=is; i<=ie+1; ++i) {
          kappaf = 0.5*(kappa(DiffProcess::iso,k,j,i) + kappa(DiffProcess::iso,k,j,i-1));
-         denf = 0.5*(p(IDN,k,j,i) + p(IDN,k,j,i-1));
+-        denf = 0.5*(p(IDN,k,j,i) + p(IDN,k,j,i-1));
 -        dTdx = (p(IPR,k,j,i)/p(IDN,k,j,i) - p(IPR,k,j,i-1)/
 -                p(IDN,k,j,i-1))/pco_->dx1v(i-1);
+-        x1flux(k,j,i) -= kappaf*denf*dTdx;
 +        dTdx = (get_temp(p.at(k,j,i))
 +                - get_temp(p.at(k,j,i-1)))/pco_->dx1v(i-1);
-         x1flux(k,j,i) -= kappaf*denf*dTdx;
++        x1flux(k,j,i) -= kappaf*dTdx;
        }
      }
-@@ -71,8 +88,9 @@ void HydroDiffusion::ThermalFluxIso(
+   }
+@@ -67,13 +83,13 @@ void HydroDiffusion::ThermalFluxIso(
+     AthenaArray<Real> &x2flux = flx[X2DIR];
+     for (int k=kl; k<=ku; ++k) {
+       for (int j=js; j<=je+1; ++j) {
+-#pragma omp simd private(kappaf, denf, dTdy)
++#pragma omp simd private(kappaf, dTdy)
          for (int i=il; i<=iu; ++i) {
            kappaf = 0.5*(kappa(DiffProcess::iso,k,j,i) + kappa(DiffProcess::iso,k,j-1,i));
-           denf = 0.5*(p(IDN,k,j,i) + p(IDN,k,j-1,i));
+-          denf = 0.5*(p(IDN,k,j,i) + p(IDN,k,j-1,i));
 -          dTdy = (p(IPR,k,j,i)/p(IDN,k,j,i) - p(IPR,k,j-1,i)/
 -                  p(IDN,k,j-1,i))/pco_->h2v(i)/pco_->dx2v(j-1);
+-          x2flux(k,j,i) -= kappaf*denf*dTdy;
 +          dTdy = (get_temp(p.at(k,j,i))
 +                  - get_temp(p.at(k,j-1,i))
 +                  )/pco_->h2v(i)/pco_->dx2v(j-1);
-           x2flux(k,j,i) -= kappaf*denf*dTdy;
++          x2flux(k,j,i) -= kappaf*dTdy;
          }
        }
-@@ -95,8 +113,9 @@ void HydroDiffusion::ThermalFluxIso(
+     }
+@@ -91,13 +107,13 @@ void HydroDiffusion::ThermalFluxIso(
+     AthenaArray<Real> &x3flux = flx[X3DIR];
+     for (int k=ks; k<=ke+1; ++k) {
+       for (int j=jl; j<=ju; ++j) {
+-#pragma omp simd private(kappaf, denf, dTdz)
++#pragma omp simd private(kappaf, dTdz)
          for (int i=il; i<=iu; ++i) {
            kappaf = 0.5*(kappa(DiffProcess::iso,k,j,i) + kappa(DiffProcess::iso,k-1,j,i));
-           denf = 0.5*(p(IDN,k,j,i) + p(IDN,k-1,j,i));
+-          denf = 0.5*(p(IDN,k,j,i) + p(IDN,k-1,j,i));
 -          dTdz = (p(IPR,k,j,i)/p(IDN,k,j,i) - p(IPR,k-1,j,i)/
 -                  p(IDN,k-1,j,i))/pco_->dx3v(k-1)/pco_->h31v(i)/pco_->h32v(j);
+-          x3flux(k,j,i) -= kappaf*denf*dTdz;
 +          dTdz = (get_temp(p.at(k,j,i))
 +                  - get_temp(p.at(k-1,j,i))
 +                  )/pco_->dx3v(k-1)/pco_->h31v(i)/pco_->h32v(j);
-           x3flux(k,j,i) -= kappaf*denf*dTdz;
++          x3flux(k,j,i) -= kappaf*dTdz;
          }
        }
+     }
