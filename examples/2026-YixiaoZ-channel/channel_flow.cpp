@@ -23,9 +23,10 @@
 #include "wall_boundary_condition.hpp"
 #include "channel_utils.hpp"
 
-const int i_vapor = 1;
-const int i_wall = 1;
-const int i_flow = 2;
+constexpr int i_vapor = 1;
+constexpr int i_solid = 2;
+constexpr int i_wall = 1;
+constexpr int i_flow = 2;
 
 
 enum class ProblemType {
@@ -35,7 +36,7 @@ enum class ProblemType {
 
 const ProblemType problem_type = ProblemType::NudgedShortChannel;
 
-const int buffer_size = 1000;
+constexpr int buffer_size = 1000;
 Real g_ice_temp[buffer_size];
 Real g_evaporation[buffer_size];
 Real g_sensible_heat_flux[buffer_size];
@@ -306,20 +307,22 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   if (pthermo->SpeciesIndex("H2O") != i_vapor) {
     throw std::runtime_error("i_vapor does not match");
   }
+  if (pthermo->SpeciesIndex("H2O(s)") != i_solid) {
+    throw std::runtime_error("i_solid does not match");
+  }
 
-  // EnrollUserExplicitSourceFunction(Forcing);
+  EnrollUserExplicitSourceFunction(Forcing);
   EnrollViscosityCoefficient(WaterVaporViscosity);
   EnrollConductionCoefficient(WaterVaporConduction);
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(6);
+  AllocateUserOutputVariables(5);
   SetUserOutputVariableName(0, "temp");
   SetUserOutputVariableName(1, "ice_temp");
   SetUserOutputVariableName(2, "evaporation");
   SetUserOutputVariableName(3, "sensible_heat_flux");
   SetUserOutputVariableName(4, "total_energy_flux");
-  SetUserOutputVariableName(5, "energy_density");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
@@ -340,7 +343,6 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
         user_out_var(2, k, j, i) = g_evaporation[i_out];
         user_out_var(3, k, j, i) = g_sensible_heat_flux[i_out];
         user_out_var(4, k, j, i) = g_total_energy_flux[i_out];
-        user_out_var(5, k, j, i) = get_energy(w.at(k, j, i));
       }
     }
   }
@@ -359,9 +361,9 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
   auto pthermo = Thermodynamics::GetInstance();
   auto water_ice_eos = WaterIceEOS();
-  const Real temperature = pin->GetReal("initialcondition", "temperature");
-  const Real pressure = water_ice_eos.pres_sat(temperature);
-  const Real density = water_ice_eos.vapor_density_sat(temperature);
+  const Real temperature = water_ice_eos.temp3;
+  const Real pressure = 0.5 * water_ice_eos.pres_sat(temperature);
+  const Real density = water_ice_eos.gas.density(temperature, pressure);
   const Real uc = pin->GetReal("initialcondition", "center_velocity");
 
   // populate to 3D mesh
@@ -399,8 +401,33 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 }
 #endif
 
-#ifdef PG_INIT_USING_TEXT_FILES
+#ifdef PG_INIT_USING_ZERO_VELOCITY
+void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
+  auto pthermo = Thermodynamics::GetInstance();
+  auto water_ice_eos = WaterIceEOS();
+  const Real temperature = water_ice_eos.temp3;
+  const Real pressure = 0.5 * water_ice_eos.pres_sat(temperature);
+  const Real density = water_ice_eos.gas.density(temperature, pressure);
+
+  // populate to 3D mesh
+  for (int k = ks; k <= ke; ++k) {
+    for (int j = js; j <= je; ++j) {
+      for (int i = is; i <= ie; ++i) {
+        const Real y = get_xv(this, i_wall, k, j, i);
+        phydro->w(IDN, k, j, i) = density;
+        phydro->w(i_vapor, k, j, i) = 1.;
+        phydro->w(IPR, k, j, i) = pressure;
+      }
+    }
+  }
+
+  peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, is, ie,
+                              js, je, ks, ke);
+}
+#endif
+
+#ifdef PG_INIT_USING_TEXT_FILES
 auto read_vector(const std::string &file_name) {
   std::string line;
   Real value;
@@ -425,28 +452,6 @@ auto read_vector(const std::string &file_name) {
 }
 
 void MeshBlock::ProblemGenerator(ParameterInput *pin) {
-  auto pthermo = Thermodynamics::GetInstance();
-
-  // {
-  //   auto w = phydro->w.at(ks, js, is);
-  //   auto water_ice_eos = WaterIceEOS();
-  //   Real temp = water_ice_eos.temp3;
-
-  //   w[IDN] = water_ice_eos.vapor_density_sat(temp);
-  //   w[pthermo->SpeciesIndex("H2O")] = 1.;
-  //   w[pthermo->SpeciesIndex("H2O(s)")] = 0.;
-  //   w[IPR] = water_ice_eos.pres_sat(temp);
-  //   std::cout << pthermo->GetInternalEnergy(w) << std::endl;
-
-  //   Real ice_frac = 0.999;
-
-  //   w[IDN] = water_ice_eos.vapor_density_sat(temp) / (1. - ice_frac);
-  //   w[pthermo->SpeciesIndex("H2O")] = 1. - ice_frac;
-  //   w[pthermo->SpeciesIndex("H2O(s)")] = ice_frac;
-  //   w[IPR] = water_ice_eos.pres_sat(temp);
-  //   std::cout << pthermo->GetInternalEnergy(w) << std::endl;
-  //   std::exit(0);
-  // }
 
   auto init_density = read_vector("init_density.txt");
   auto init_icefraction = read_vector("init_icefraction.txt");
@@ -461,8 +466,8 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
             get_axis_i(i_wall, k, j, i) - get_axis_i(i_wall, ks, js, is)
         );
         phydro->w(IDN, k, j, i) = init_density[l];
-        phydro->w(pthermo->SpeciesIndex("H2O"), k, j, i) = 1. - init_icefraction[l];
-        phydro->w(pthermo->SpeciesIndex("H2O(s)"), k, j, i) = init_icefraction[l];
+        phydro->w(i_vapor, k, j, i) = 1. - init_icefraction[l];
+        phydro->w(i_solid, k, j, i) = init_icefraction[l];
         phydro->w(IVX + i_flow - 1, k, j, i) = init_velocity[l];
         phydro->w(IPR, k, j, i) = init_pressure[l];
       }
