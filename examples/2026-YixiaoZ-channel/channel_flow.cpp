@@ -156,38 +156,6 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
   }
 }
 
-void TopSuction(MeshBlock *pmb, Real const time, Real const dt,
-                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-                     AthenaArray<Real> &s) {
-  auto pthermo = Thermodynamics::GetInstance();
-  auto water_ice_eos = WaterIceEOS();
-
-  const Real velocity_scale = 600.;
-  const Real rate = velocity_scale / get_xmax(pmb, i_flow);
-
-  for (int k = pmb->ks; k <= pmb->ke; ++k) {
-    for (int j = pmb->js; j <= pmb->je; ++j) {
-      for (int i = pmb->is; i <= pmb->ie; ++i) {
-        if (get_xv(pmb, i_flow, k, j, i) > 0.) {
-          const auto w_kji = w.at(k, j, i);
-          const Real drho = -dt * rate * w_kji[IDN] * w_kji[i_vapor];
-
-          u(i_vapor, k, j, i) += drho;
-          const int nvs[] = {IVX, IVY, IVZ};
-          Real b = water_ice_eos.gas.specific_enthalpy(pthermo->GetTemp(w_kji));
-
-          for (auto n: nvs) {
-            u(n, k, j, i) += drho * w_kji[n];
-            b += 0.5 * square(w_kji[n]);
-          }
-          u(IEN, k, j, i) += drho * b;
-        }
-      }
-    }
-  }
-}
-
 Real get_density(StrideIterator<Real*> w) {
   return w[IDN];
 }
@@ -250,11 +218,10 @@ void Forcing(MeshBlock *pmb, Real const time, Real const dt,
              AthenaArray<Real> const &w, AthenaArray<Real> const &r,
              AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
              AthenaArray<Real> &s) {
-  WallInteraction(pmb, time, dt, w, r, bcc, u, s);
+  // WallInteraction(pmb, time, dt, w, r, bcc, u, s);
 
   if (problem_type == ProblemType::LongChannel) {
     BottomInjection(pmb, time, dt, w, r, bcc, u, s);
-    TopSuction(pmb, time, dt, w, r, bcc, u, s);
   } else if (problem_type == ProblemType::NudgedShortChannel) {
     Nudge(pmb, time, dt, w, r, bcc, u, s);
   } else {
@@ -348,32 +315,126 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
   }
 }
 
-#define PG_INIT_USING_ZERO_VELOCITY
+void reflecting_inner_x2(MeshBlock *pmb, Coordinates *pco,
+                        AthenaArray<Real> &prim, FaceField &b, Real time,
+                        Real dt, int il, int iu, int jl, int ju, int kl, int ku,
+                        int ngh) {
+  for (int n = 0; n < NHYDRO; ++n) {
+    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    for (int k = kl; k <= ku; ++k) {
+      for (int j = 1; j <= ngh; ++j) {
+        for (int i = il; i <= iu; ++i) {
+          prim(n, k, jl - j, i) = sign * prim(n, k, jl + j - 1, i);
+        }
+      }
+    }
+  }
+}
 
-#ifdef PG_INIT_USING_ANALYTICAL_SOLUTION
+void reflecting_outer_x2(MeshBlock *pmb, Coordinates *pco,
+                        AthenaArray<Real> &prim, FaceField &b, Real time,
+                        Real dt, int il, int iu, int jl, int ju, int kl, int ku,
+                        int ngh) {
+  for (int n = 0; n < NHYDRO; ++n) {
+    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    for (int k = kl; k <= ku; ++k) {
+      for (int j = 1; j <= ngh; ++j) {
+        for (int i = il; i <= iu; ++i) {
+          prim(n, k, ju + j, i) = sign * prim(n, k, ju - j + 1, i);
+        }
+      }
+    }
+  }
+}
+
+
+void reflecting_inner_x1(MeshBlock *pmb, Coordinates *pco,
+                        AthenaArray<Real> &prim, FaceField &b, Real time,
+                        Real dt, int il, int iu, int jl, int ju, int kl, int ku,
+                        int ngh) {
+  for (int n = 0; n < NHYDRO; ++n) {
+    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    for (int k = kl; k <= ku; ++k) {
+      for (int j = jl; j <= ju; ++j) {
+        for (int i = 1; i <= ngh; ++i) {
+          prim(n, k, j, il - i) = sign * prim(n, k, j, il + i - 1);
+        }
+      }
+    }
+  }
+}
+
+void reflecting_outer_x1(MeshBlock *pmb, Coordinates *pco,
+                         AthenaArray<Real> &prim, FaceField &b, Real time,
+                         Real dt, int il, int iu, int jl, int ju, int kl,
+                         int ku, int ngh) {
+  for (int n = 0; n < NHYDRO; ++n) {
+    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    for (int k = kl; k <= ku; ++k) {
+      for (int j = jl; j <= ju; ++j) {
+        for (int i = 1; i <= ngh; ++i) {
+          prim(n, k, j, iu + i) = sign * prim(n, k, j, iu - i + 1);
+        }
+      }
+    }
+  }
+}
+
+
+template <class T>
+auto get_user_boundary_function(T bf) {
+  if (bf == BoundaryFace::inner_x2) {
+    return reflecting_inner_x2;
+  } else if (bf == BoundaryFace::outer_x2) {
+    return reflecting_outer_x2;
+  } else if (bf == BoundaryFace::inner_x1) {
+    return reflecting_inner_x1;
+  } else if (bf == BoundaryFace::outer_x1) {
+    return reflecting_outer_x1;
+  } else {
+    throw std::runtime_error("Unknown BoundaryFace");
+  }
+}
+
+
+template <class T>
+auto get_boundary_center(MeshBlock *pblock, T bf) {
+  const auto block_size = pblock->block_size;
+  Real x1 = (block_size.x1min + block_size.x1max) / 2;
+  Real x2 = (block_size.x2min + block_size.x2max) / 2;
+
+  if (bf == BoundaryFace::inner_x2) {
+    x2 = block_size.x2min;
+  } else if (bf == BoundaryFace::outer_x2) {
+    x2 = block_size.x2max;
+  } else if (bf == BoundaryFace::inner_x1) {
+    x1 = block_size.x1min;
+  } else if (bf == BoundaryFace::outer_x1) {
+    x1 = block_size.x1max;
+  } else {
+    throw std::runtime_error("Unknown BoundaryFace");
+  }
+  struct BoundaryCenter {
+    Real x1;
+    Real x2;
+  } bc {x1, x2};
+  return bc;
+}
+
 void MeshBlock::ProblemGenerator(ParameterInput *pin) {
-
-  const auto mesh_size = pmy_mesh->mesh_size;
-  const Real ymin = get_xmin(this, i_wall);
-  const Real ymax = get_xmax(this, i_wall);
-  const Real yc = 0.5 * (ymax + ymin);
-  const Real yd = 0.5 * (ymax - ymin);
 
   auto pthermo = Thermodynamics::GetInstance();
   auto water_ice_eos = WaterIceEOS();
   const Real temperature = water_ice_eos.temp3;
   const Real pressure = 0.5 * water_ice_eos.pres_sat(temperature);
   const Real density = water_ice_eos.gas.density(temperature, pressure);
-  const Real uc = pin->GetReal("initialcondition", "center_velocity");
 
-  // populate to 3D mesh
   for (int k = ks; k <= ke; ++k) {
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
         const Real y = get_xv(this, i_wall, k, j, i);
         phydro->w(IDN, k, j, i) = density;
         phydro->w(i_vapor, k, j, i) = 1.;
-        phydro->w(IVX + i_flow - 1, k, j, i) = uc * (1. - square((y - yc) / yd));
         phydro->w(IPR, k, j, i) = pressure;
       }
     }
@@ -382,99 +443,29 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, is, ie,
                               js, je, ks, ke);
 
-  std::mt19937 gen(1234 + 17 * get_mpi_rank());
-  std::uniform_real_distribution<Real> phi_distribution(0., 2 * M_PI);
+  const Real wall_x1_min = pin->GetReal("problem", "wall_x1_min");
+  const Real wall_x1_max = pin->GetReal("problem", "wall_x1_max");
+  const Real wall_x2_min = pin->GetReal("problem", "wall_x2_min");
+  const Real wall_x2_max = pin->GetReal("problem", "wall_x2_max");
 
-  const Real vp_scale = (
-    pin->GetReal("initialcondition", "velocity_perturbation_scale")
-  );
+  const int bfs[] = {BoundaryFace::inner_x2, BoundaryFace::outer_x2,
+    BoundaryFace::inner_x1, BoundaryFace::outer_x1};
+  for (auto bf: bfs) {
+    const auto bc = get_boundary_center(this, bf);
+    std::cout << "loc: " << bc.x1 << ", " << bc.x2 << std::endl;
+    const bool is_wall = (
+        (bc.x1 > wall_x1_min) && (bc.x1 < wall_x1_max)
+        && (bc.x2 < wall_x2_min) && (bc.x2 < wall_x2_max)
+    );
+    if (is_wall) {
+      pmy_mesh->mesh_bcs[bf] = BoundaryFlag::user;
+      pbval->block_bcs[bf] = BoundaryFlag::user;
+      pbval->apply_bndry_fn_[bf] = true;
 
-  for (int k = ks; k <= ke; ++k) {
-    for (int j = js; j <= je; ++j) {
-      for (int i = is; i <= ie; ++i) {
-        const Real phi = phi_distribution(gen);
-        const Real pert = vp_scale * phydro->u(IVX + i_flow - 1, k, j, i);
-        phydro->u(IVX + i_wall - 1, k, j, i) += pert * std::cos(phi);
-      }
+      std::cout << "EnrollUserBoundaryFunction: " << bf << std::endl;
+
+      const auto func = get_user_boundary_function(bf);
+      pmy_mesh->EnrollUserBoundaryFunction(bf, func);
     }
   }
 }
-#endif
-
-#ifdef PG_INIT_USING_ZERO_VELOCITY
-void MeshBlock::ProblemGenerator(ParameterInput *pin) {
-
-  auto pthermo = Thermodynamics::GetInstance();
-  auto water_ice_eos = WaterIceEOS();
-  const Real temperature = water_ice_eos.temp3;
-  const Real pressure = 0.5 * water_ice_eos.pres_sat(temperature);
-  const Real density = water_ice_eos.gas.density(temperature, pressure);
-
-  // populate to 3D mesh
-  for (int k = ks; k <= ke; ++k) {
-    for (int j = js; j <= je; ++j) {
-      for (int i = is; i <= ie; ++i) {
-        const Real y = get_xv(this, i_wall, k, j, i);
-        phydro->w(IDN, k, j, i) = density;
-        phydro->w(i_vapor, k, j, i) = 1.;
-        phydro->w(IPR, k, j, i) = pressure;
-      }
-    }
-  }
-
-  peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, is, ie,
-                              js, je, ks, ke);
-}
-#endif
-
-#ifdef PG_INIT_USING_TEXT_FILES
-auto read_vector(const std::string &file_name) {
-  std::string line;
-  Real value;
-  std::vector<Real> values;
-
-  std::ifstream file(file_name);
-
-  if (!file.is_open()) {
-    throw std::runtime_error("File does not exist");
-  }
-
-  while (std::getline(file, line)) {
-      std::istringstream ss(line);
-      if (ss >> value) {
-        values.push_back(value);
-      } else {
-        throw std::runtime_error("Illegal value");
-      }
-  }
-  file.close();
-  return values;
-}
-
-void MeshBlock::ProblemGenerator(ParameterInput *pin) {
-
-  auto init_density = read_vector("init_density.txt");
-  auto init_icefraction = read_vector("init_icefraction.txt");
-  auto init_velocity = read_vector("init_velocity.txt");
-  auto init_pressure = read_vector("init_pressure.txt");
-
-  // populate to 3D mesh
-  for (int k = ks; k <= ke; ++k) {
-    for (int j = js; j <= je; ++j) {
-      for (int i = is; i <= ie; ++i) {
-        const int l = (
-            get_axis_i(i_wall, k, j, i) - get_axis_i(i_wall, ks, js, is)
-        );
-        phydro->w(IDN, k, j, i) = init_density[l];
-        phydro->w(i_vapor, k, j, i) = 1. - init_icefraction[l];
-        phydro->w(i_solid, k, j, i) = init_icefraction[l];
-        phydro->w(IVX + i_flow - 1, k, j, i) = init_velocity[l];
-        phydro->w(IPR, k, j, i) = init_pressure[l];
-      }
-    }
-  }
-
-  peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, is, ie,
-                              js, je, ks, ke);
-}
-#endif

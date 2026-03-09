@@ -9,19 +9,19 @@ tasklist    = ImplicitHydroTasks
 
 <output1>
 file_type   = hst           # History data dump
-dt          = 0.1           # time increment between outputs
+dt          = 0.001           # time increment between outputs
 # dcycle = 1
 
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 0.1           # time increment between outputs
+dt          = 0.001           # time increment between outputs
 # dcycle = 1
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 0.1           # time increment
+dt          = 0.001           # time increment
 # dcycle = 1
 
 <output4>
@@ -36,17 +36,17 @@ xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 <mesh>
-nx2         = 128
-x2min       = -1000.
-x2max       = 280.
+nx2         = 200
+x2min       = -1.
+x2max       = 1.
 ix2_bc      = reflecting
 ox2_bc      = outflow
 
-nx1         = 32
-x1min       = -0.1
-x1max       = 0.1
+nx1         = 100
+x1min       = 0.
+x1max       = 1.
 ix1_bc      = reflecting
-ox1_bc      = reflecting
+ox1_bc      = outflow
 
 nx3         = 1
 x3min       = 0.
@@ -55,8 +55,8 @@ ix3_bc      = periodic
 ox3_bc      = periodic
 
 <meshblock>
-nx1         = 32
-nx2         = 32
+nx1         = 100
+nx2         = 10
 nx3         = 1
 
 <hydro>
@@ -69,6 +69,12 @@ thermodynamics_config = geyser_h2o.yaml
 wall_temperature = 273.16
 nu_iso = 12e-6
 kappa_iso = 12e-6
+
+wall_x1_min = 0.099
+wall_x1_max = 1e8
+
+wall_x2_min = -1e8
+wall_x2_max = 0.001
 
 <initialcondition>
 
