@@ -36,11 +36,11 @@ xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 <mesh>
-nx2         = 1
+nx2         = 128
 x2min       = -1000.
 x2max       = 280.
-ix2_bc      = periodic
-ox2_bc      = periodic
+ix2_bc      = reflecting
+ox2_bc      = outflow
 
 nx1         = 32
 x1min       = -0.1
@@ -56,7 +56,7 @@ ox3_bc      = periodic
 
 <meshblock>
 nx1         = 32
-nx2         = 1
+nx2         = 32
 nx3         = 1
 
 <hydro>

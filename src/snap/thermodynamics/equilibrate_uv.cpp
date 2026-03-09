@@ -1358,8 +1358,8 @@ class EquilibriumCondensation {
       // 2nd branch: vapor pressure = saturated
       {
         Real temp = init_temp;
-        const int max_iter = 16;
-        const Real temp_tol = 1e-3;
+        const int max_iter = 128;
+        const Real temp_tol = 1e-6;
         const Real temp_min = 1.;
 
         typedef adcpp::fwd::Number<Real> Dual;

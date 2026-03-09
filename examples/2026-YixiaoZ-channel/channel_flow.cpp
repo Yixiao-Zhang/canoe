@@ -34,7 +34,7 @@ enum class ProblemType {
   NudgedShortChannel,
 };
 
-const ProblemType problem_type = ProblemType::NudgedShortChannel;
+const ProblemType problem_type = ProblemType::LongChannel;
 
 constexpr int buffer_size = 1000;
 Real g_ice_temp[buffer_size];
@@ -163,7 +163,7 @@ void TopSuction(MeshBlock *pmb, Real const time, Real const dt,
   auto pthermo = Thermodynamics::GetInstance();
   auto water_ice_eos = WaterIceEOS();
 
-  const Real velocity_scale = 200.;
+  const Real velocity_scale = 600.;
   const Real rate = velocity_scale / get_xmax(pmb, i_flow);
 
   for (int k = pmb->ks; k <= pmb->ke; ++k) {
@@ -348,7 +348,7 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
   }
 }
 
-#define PG_INIT_USING_TEXT_FILES
+#define PG_INIT_USING_ZERO_VELOCITY
 
 #ifdef PG_INIT_USING_ANALYTICAL_SOLUTION
 void MeshBlock::ProblemGenerator(ParameterInput *pin) {
