@@ -153,7 +153,7 @@ namespace WallBoundaryCondition {
         radiation(radiation) {}
 
       auto solve(const Real air_temp, const Real vapor_p,
-            const Real radius) {
+            const Real radius) const {
         const int max_iter = 32;
         const Real abstol = 1e-6;
         const Real t_min = 10.;
@@ -203,7 +203,7 @@ namespace WallBoundaryCondition {
   };
 
   template<class Real>
-  auto build_solver(const Real dx, const Real radius, const Real kappa) {
+  auto build_solver(const Real dx, const Real kappa) {
     const Real Avogadro = 6.02214076e23;
     const Real Boltzmann = 1.380649e-23;
     const Real atomic_mass_H = 1.008e-3;

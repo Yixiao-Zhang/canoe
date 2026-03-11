@@ -164,6 +164,11 @@ inline Real get_xmax(MeshBlock *pmb, const int axis) {
   }
 }
 
+inline Real get_x_range(MeshBlock *pmb, const int axis) {
+  return get_xmax(pmb, axis) - get_xmin(pmb, axis);
+}
+
+
 inline bool is_left_boundary(MeshBlock *pmb, const int axis,
       const int k, const int j, const int i) {
   return get_xv(pmb, axis, k, j, i) < (
@@ -175,14 +180,6 @@ inline bool is_right_boundary(MeshBlock *pmb, const int axis,
       const int k, const int j, const int i) {
   return get_xv(pmb, axis, k, j, i) > (
     get_xmax(pmb, axis) - get_dxf(pmb, axis, k, j, i)
-  );
-}
-
-inline bool is_boundary(MeshBlock *pmb, const int axis,
-      const int k, const int j, const int i) {
-  return (
-    is_left_boundary(pmb, axis, k, j, i)
-    || is_right_boundary(pmb, axis, k, j, i)
   );
 }
 

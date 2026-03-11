@@ -25,18 +25,41 @@
 
 constexpr int i_vapor = 1;
 constexpr int i_solid = 2;
-constexpr int i_wall = 1;
+constexpr int i_norm = 1;
 constexpr int i_flow = 2;
+constexpr int i_span = 3;
 
+constexpr Real x_flow_exit = 0.;
+
+Real g_wall_delta;
+Real g_wall_x_abstol;
+
+inline bool is_masked(Real x_norm, Real x_flow) {
+  return (
+    (std::abs(x_norm) > g_wall_delta - g_wall_x_abstol)
+    && (x_flow < x_flow_exit + g_wall_x_abstol)
+  );
+}
+
+inline bool is_ice_wall_boundary(MeshBlock *pmb, const int axis,
+      const int k, const int j, const int i) {
+  const Real xv_norm = get_xv(pmb, i_norm, k, j, i);
+  const Real xv_flow = get_xv(pmb, i_flow, k, j, i);
+  const Real dxf_norm = get_dxf(pmb, i_norm, k, j, i);
+  return (
+      (std::abs(xv_norm) < g_wall_delta)
+      && (std::abs(xv_norm) + dxf_norm < g_wall_delta)
+      && (xv_flow < x_flow_exit)
+  );
+}
 
 enum class ProblemType {
   LongChannel,
   NudgedShortChannel,
 };
 
-const ProblemType problem_type = ProblemType::LongChannel;
-
 constexpr int buffer_size = 1000;
+
 Real g_ice_temp[buffer_size];
 Real g_evaporation[buffer_size];
 Real g_sensible_heat_flux[buffer_size];
@@ -62,26 +85,16 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
   for (int k = pmb->ks; k <= pmb->ke; ++k) {
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
-        if (is_boundary(pmb, i_wall, k, j, i)) {
+        if (is_ice_wall_boundary(pmb, i_norm, k, j, i)) {
           const auto w_kji = w.at(k, j, i);
-          const Real dx = get_dxf(pmb, i_wall, k, j, i);
-          const Real r = -dt * nu_iso / square(0.5 * dx);
-
-          const int nvs[] = {IVX, IVY, IVZ};
-          for (auto n: nvs) {
-            u(n, k, j, i) += r * w_kji[n];
-          }
-
-          const Real distance = (
-              (problem_type == ProblemType::LongChannel) ?
-              -get_xv(pmb, i_flow, k, j, i) : 500.
+          const Real dx = get_dxf(pmb, i_norm, k, j, i);
+          const auto solver = WallBoundaryCondition::build_solver(
+            0.5 * dx, kappa_iso * cp
           );
 
-          if (distance > 0) {
-            auto solver = WallBoundaryCondition::build_solver(
-              0.5 * dx, distance, kappa_iso * cp
-            );
+          const Real distance = x_flow_exit - get_xv(pmb, i_flow, k, j, i);
 
+          if (distance > 0) {
             Real air_temp = pthermo->GetTemp(w_kji);
 
             Real vapor_p = (
@@ -91,8 +104,7 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
             auto bc = solver.solve(air_temp, vapor_p, distance);
 
             u(IEN, k, j, i) -= dt * bc.sensible_heat_flux / dx;
-            // const Real drho = dt * bc.evaporation / dx;
-            const Real drho = 0.;
+            const Real drho = dt * bc.evaporation / dx;
 
             const Real t_exchange = (drho > 0) ? bc.ice_temp : air_temp;
             const Real u_exchange = (drho > 0) ? 0. : w_kji[IVX];
@@ -134,7 +146,10 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
   for (int k = pmb->ks; k <= pmb->ke; ++k) {
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
-        if (is_left_boundary(pmb, i_flow, k, j, i)) {
+        const Real x_norm = get_xv(pmb, i_norm, k, j, i);
+        const Real x_flow = get_xv(pmb, i_flow, k, j, i);
+        if (is_left_boundary(pmb, i_flow, k, j, i)
+            && !is_masked(x_norm, x_flow)) {
           const Real p = pmb->phydro->w(IPR, k, j, i);
           const Real d = get_dxf(pmb, i_flow, k, j, i);
           const Real drho= dt * (
@@ -218,15 +233,8 @@ void Forcing(MeshBlock *pmb, Real const time, Real const dt,
              AthenaArray<Real> const &w, AthenaArray<Real> const &r,
              AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
              AthenaArray<Real> &s) {
-  // WallInteraction(pmb, time, dt, w, r, bcc, u, s);
-
-  if (problem_type == ProblemType::LongChannel) {
-    BottomInjection(pmb, time, dt, w, r, bcc, u, s);
-  } else if (problem_type == ProblemType::NudgedShortChannel) {
-    Nudge(pmb, time, dt, w, r, bcc, u, s);
-  } else {
-    throw std::runtime_error("Unknown problem_type");
-  }
+  WallInteraction(pmb, time, dt, w, r, bcc, u, s);
+  BottomInjection(pmb, time, dt, w, r, bcc, u, s);
 }
 
 void WaterVaporConduction(HydroDiffusion *phdif, MeshBlock *pmb, const AthenaArray<Real> &prim,
@@ -277,6 +285,9 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   if (pthermo->SpeciesIndex("H2O(s)") != i_solid) {
     throw std::runtime_error("i_solid does not match");
   }
+
+  g_wall_delta = pin->GetReal("problem", "wall_delta");
+  g_wall_x_abstol = 1e-8 * g_wall_delta;
 
   EnrollUserExplicitSourceFunction(Forcing);
   EnrollViscosityCoefficient(WaterVaporViscosity);
@@ -402,6 +413,7 @@ auto get_boundary_center(MeshBlock *pblock, T bf) {
   const auto block_size = pblock->block_size;
   Real x1 = (block_size.x1min + block_size.x1max) / 2;
   Real x2 = (block_size.x2min + block_size.x2max) / 2;
+  Real x3 = (block_size.x3min + block_size.x3max) / 2;
 
   if (bf == BoundaryFace::inner_x2) {
     x2 = block_size.x2min;
@@ -414,10 +426,15 @@ auto get_boundary_center(MeshBlock *pblock, T bf) {
   } else {
     throw std::runtime_error("Unknown BoundaryFace");
   }
+  const std::tuple xs {x1, x2, x3};
+  const Real x_norm = std::get<i_norm-1>(xs);
+  const Real x_flow = std::get<i_flow-1>(xs);
+  const Real x_span = std::get<i_span-1>(xs);
   struct BoundaryCenter {
-    Real x1;
-    Real x2;
-  } bc {x1, x2};
+    Real x_norm;
+    Real x_flow;
+    Real x_span;
+  } bc {x_norm, x_flow, x_span};
   return bc;
 }
 
@@ -426,13 +443,24 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
   auto water_ice_eos = WaterIceEOS();
   const Real temperature = water_ice_eos.temp3;
-  const Real pressure = 0.5 * water_ice_eos.pres_sat(temperature);
-  const Real density = water_ice_eos.gas.density(temperature, pressure);
+  const Real bottom_pressure = water_ice_eos.pres_sat(temperature);
+  const Real x_flow_bottom = get_xmin(this, i_flow);
+  const Real scale_height = 0.3 * (x_flow_exit - x_flow_bottom);
 
   for (int k = ks; k <= ke; ++k) {
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
-        const Real y = get_xv(this, i_wall, k, j, i);
+        const Real x_norm = get_xv(this, i_norm, k, j, i);
+        const Real x_flow = get_xv(this, i_flow, k, j, i);
+
+        const Real pressure = (
+          bottom_pressure
+          * ((is_masked(x_norm, x_flow)) ?
+            0.99
+            : std::exp(-(std::min(x_flow, x_flow_exit) - x_flow_bottom) / scale_height)
+          )
+        );
+        const Real density = water_ice_eos.gas.density(temperature, pressure);
         phydro->w(IDN, k, j, i) = density;
         phydro->w(i_vapor, k, j, i) = 1.;
         phydro->w(IPR, k, j, i) = pressure;
@@ -443,26 +471,15 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   peos->PrimitiveToConserved(phydro->w, pfield->bcc, phydro->u, pcoord, is, ie,
                               js, je, ks, ke);
 
-  const Real wall_x1_min = pin->GetReal("problem", "wall_x1_min");
-  const Real wall_x1_max = pin->GetReal("problem", "wall_x1_max");
-  const Real wall_x2_min = pin->GetReal("problem", "wall_x2_min");
-  const Real wall_x2_max = pin->GetReal("problem", "wall_x2_max");
-
   const int bfs[] = {BoundaryFace::inner_x2, BoundaryFace::outer_x2,
     BoundaryFace::inner_x1, BoundaryFace::outer_x1};
+
   for (auto bf: bfs) {
     const auto bc = get_boundary_center(this, bf);
-    std::cout << "loc: " << bc.x1 << ", " << bc.x2 << std::endl;
-    const bool is_wall = (
-        (bc.x1 > wall_x1_min) && (bc.x1 < wall_x1_max)
-        && (bc.x2 < wall_x2_min) && (bc.x2 < wall_x2_max)
-    );
-    if (is_wall) {
+    if (is_masked(bc.x_norm, bc.x_flow)) {
       pmy_mesh->mesh_bcs[bf] = BoundaryFlag::user;
       pbval->block_bcs[bf] = BoundaryFlag::user;
       pbval->apply_bndry_fn_[bf] = true;
-
-      std::cout << "EnrollUserBoundaryFunction: " << bf << std::endl;
 
       const auto func = get_user_boundary_function(bf);
       pmy_mesh->EnrollUserBoundaryFunction(bf, func);
