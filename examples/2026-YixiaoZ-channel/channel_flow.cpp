@@ -48,7 +48,7 @@ inline bool is_ice_wall_boundary(MeshBlock *pmb, const int axis,
   const Real dxf_norm = get_dxf(pmb, i_norm, k, j, i);
   return (
       (std::abs(xv_norm) < g_wall_delta)
-      && (std::abs(xv_norm) + dxf_norm < g_wall_delta)
+      && (std::abs(xv_norm) + dxf_norm > g_wall_delta)
       && (xv_flow < x_flow_exit)
   );
 }
@@ -94,42 +94,40 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
 
           const Real distance = x_flow_exit - get_xv(pmb, i_flow, k, j, i);
 
-          if (distance > 0) {
-            Real air_temp = pthermo->GetTemp(w_kji);
+          Real air_temp = pthermo->GetTemp(w_kji);
 
-            Real vapor_p = (
-                w_kji[IDN] * w_kji[i_vapor] * air_temp
-                * pthermo->GetRd() * pthermo->GetInvMuRatio(i_vapor)
-            );
-            auto bc = solver.solve(air_temp, vapor_p, distance);
+          Real vapor_p = (
+              w_kji[IDN] * w_kji[i_vapor] * air_temp
+              * pthermo->GetRd() * pthermo->GetInvMuRatio(i_vapor)
+          );
+          auto bc = solver.solve(air_temp, vapor_p, distance);
 
-            u(IEN, k, j, i) -= dt * bc.sensible_heat_flux / dx;
-            const Real drho = dt * bc.evaporation / dx;
+          u(IEN, k, j, i) -= dt * bc.sensible_heat_flux / dx;
+          const Real drho = dt * bc.evaporation / dx;
 
-            const Real t_exchange = (drho > 0) ? bc.ice_temp : air_temp;
-            const Real u_exchange = (drho > 0) ? 0. : w_kji[IVX];
-            const Real v_exchange = (drho > 0) ? 0. : w_kji[IVY];
-            const Real w_exchange = (drho > 0) ? 0. : w_kji[IVZ];
+          const Real t_exchange = (drho > 0) ? bc.ice_temp : air_temp;
+          const Real u_exchange = (drho > 0) ? 0. : w_kji[IVX];
+          const Real v_exchange = (drho > 0) ? 0. : w_kji[IVY];
+          const Real w_exchange = (drho > 0) ? 0. : w_kji[IVZ];
 
-            u(i_vapor, k, j, i) += drho;
-            u(IEN, k, j, i) += drho * (
-              cp * t_exchange + 0.5 * (
-                square(u_exchange) + square(v_exchange) + square(w_exchange)
-              )
-            );
-            u(IVX, k, j, i) += drho * u_exchange;
-            u(IVY, k, j, i) += drho * v_exchange;
-            u(IVZ, k, j, i) += drho * w_exchange;
+          u(i_vapor, k, j, i) += drho;
+          u(IEN, k, j, i) += drho * (
+            cp * t_exchange + 0.5 * (
+              square(u_exchange) + square(v_exchange) + square(w_exchange)
+            )
+          );
+          u(IVX, k, j, i) += drho * u_exchange;
+          u(IVY, k, j, i) += drho * v_exchange;
+          u(IVZ, k, j, i) += drho * w_exchange;
 
-            const int i_out = get_axis_i(i_flow, k, j, i);
-            if (i_out > buffer_size - 1) {
-              std::cout << "buffer_size is too small." << std::endl;
-            }
-            g_ice_temp[i_out] = bc.ice_temp;
-            g_total_energy_flux[i_out] = bc.total_energy_flux;
-            g_evaporation[i_out] = bc.evaporation;
-            g_sensible_heat_flux[i_out] = bc.sensible_heat_flux;
+          const int i_out = get_axis_i(i_flow, k, j, i);
+          if (i_out > buffer_size - 1) {
+            std::cout << "buffer_size is too small." << std::endl;
           }
+          g_ice_temp[i_out] = bc.ice_temp;
+          g_total_energy_flux[i_out] = bc.total_energy_flux;
+          g_evaporation[i_out] = bc.evaporation;
+          g_sensible_heat_flux[i_out] = bc.sensible_heat_flux;
         }
       }
     }
