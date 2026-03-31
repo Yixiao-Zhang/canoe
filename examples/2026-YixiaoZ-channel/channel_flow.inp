@@ -9,19 +9,19 @@ tasklist    = ImplicitHydroTasks
 
 <output1>
 file_type   = hst           # History data dump
-dt          = 0.001           # time increment between outputs
+dt          = 0.1          # time increment between outputs
 # dcycle = 1
 
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 0.001           # time increment between outputs
+dt          = 0.1           # time increment between outputs
 # dcycle = 1
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 0.001           # time increment
+dt          = 0.1           # time increment
 # dcycle = 1
 
 <output4>
@@ -31,22 +31,24 @@ dt          = 10000.        # time increment between outputs
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
-tlim        = 1000.         # time limit
+tlim        = 100.          # time limit
 xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 <mesh>
-nx2         = 200
-x2min       = -1.
-x2max       = 1.
+nx1         = 240
+x1min       = -123.53896372957814
+x1max       = 123.53896372957814
+ix1_bc      = outflow
+ox1_bc      = outflow
+x1rat       = -1.
+
+nx2         = 1125
+x2min       = -1000.
+x2max       = 125.
 ix2_bc      = reflecting
 ox2_bc      = outflow
 
-nx1         = 100
-x1min       = 0.
-x1max       = 1.
-ix1_bc      = reflecting
-ox1_bc      = outflow
 
 nx3         = 1
 x3min       = 0.
@@ -55,8 +57,8 @@ ix3_bc      = periodic
 ox3_bc      = periodic
 
 <meshblock>
-nx1         = 100
-nx2         = 10
+nx1         = 48
+nx2         = 125
 nx3         = 1
 
 <hydro>
@@ -66,18 +68,15 @@ implicit_flag = 0
 <problem>
 thermodynamics_config = geyser_h2o.yaml
 
-wall_temperature = 273.16
 nu_iso = 12e-6
 kappa_iso = 12e-6
 
-wall_x1_min = 0.099
-wall_x1_max = 1e8
+forcing_wall_interaction = true
+forcing_bottom_ejection = true
 
-wall_x2_min = -1e8
-wall_x2_max = 0.001
+outerspace_pressure = 1e-1
 
-<initialcondition>
+wall_delta = 0.1
 
-temperature = 273.16
-center_velocity = 200.
-velocity_perturbation_scale = 0.0
+nx_half_conduit = 24
+xnorm_rat = 1.085

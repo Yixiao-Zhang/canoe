@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include "adcpp.hpp"
 
 namespace WallBoundaryCondition {
@@ -65,7 +64,7 @@ namespace WallBoundaryCondition {
           const R1 &ice_temp, const R2 &air_temp, const R3 &vapor_p) const {
         return (
             sensible_heat_flux(ice_temp, air_temp)
-            - (
+            -  (
              net_vapor_flux(ice_temp, air_temp, vapor_p)
              * specific_enthalpy_diff(ice_temp, air_temp)
             )
@@ -93,6 +92,15 @@ namespace WallBoundaryCondition {
       inline auto energy_flux(const R &ice_temp) const {
         return stefan_boltzmann_const * (pow4(ice_temp) - pow4(effective_temp));
       }
+
+      template<class R>
+      inline auto outer_surface_temp(const R &total_energy_flux) const {
+        const auto t4 = (
+          pow4(effective_temp)
+          + total_energy_flux / stefan_boltzmann_const
+        );
+        return pow(t4, 0.25);
+      }
   };
 
   template<class Real>
@@ -107,6 +115,13 @@ namespace WallBoundaryCondition {
           const R3 &distance) const {
         return k0 * log(ice_temp/surf_temp) / distance;
       }
+
+      template<class R1, class R2, class R3>
+      inline auto inner_surface_temp(const R1 &surf_temp,
+          const R2 &total_energy_flux,
+          const R3 &distance) const {
+        return surf_temp * exp(distance * total_energy_flux / k0);
+      }
   };
 
   template<class Real>
@@ -114,16 +129,12 @@ namespace WallBoundaryCondition {
     public:
       const int max_iter;
       const Real f_abstol;
-      const Real x_min;
-      const Real x_max;
 
-      NewtonRaphsonSolver(const int max_iter, const Real f_abstol,
-          const Real x_min, const Real x_max):
-        max_iter(max_iter), f_abstol(f_abstol),
-        x_min(x_min), x_max(x_max) {}
+      NewtonRaphsonSolver(const int max_iter, const Real f_abstol):
+        max_iter(max_iter), f_abstol(f_abstol) {}
 
       template<class F>
-      Real solve(F f, Real x) const {
+      Real solve(const F f, Real x, const Real x_min, const Real x_max) const {
         typedef adcpp::fwd::Number<Real> Dual;
         for (int i = 0; i < max_iter; ++i) {
           Dual x_ad(x, 1.);
@@ -137,6 +148,51 @@ namespace WallBoundaryCondition {
         return x;
       }
   };
+
+  template<class Real>
+  class BisectSolver {
+    public:
+      const int max_iter;
+      const Real f_abstol;
+
+      BisectSolver(const int max_iter, const Real f_abstol):
+        max_iter(max_iter), f_abstol(f_abstol) {}
+
+      template<class F>
+      Real solve(const F f, const Real x_min, const Real x_max) const {
+        Real xl = x_min;
+        Real xr = x_max;
+        Real x = xl + 0.5 * (xr - xl);
+
+        const Real fxl = f(xl);
+        const Real fxr = f(xr);
+
+        if (fxl <= 0 && fxr >= 0) {
+          ;
+        } else if (fxl >= 0 && fxr <= 0) {
+          const auto tmp = xl;
+          xl = xr;
+          xr = tmp;
+        } else {
+          throw std::domain_error("f(xr) and f(xl) have the same sign.");
+        }
+
+        for (int i = 0; i < max_iter; ++i) {
+          x = xl + 0.5 * (xr - xl);
+          const Real fx = f(x);
+          if (std::abs(fx) < f_abstol) {
+            break;
+          }
+          if (fx < 0) {
+            xl = x;
+          } else {
+            xr = x;
+          }
+        }
+        return x;
+      }
+  };
+
 
   template<class Real>
   class Solver {
@@ -154,40 +210,40 @@ namespace WallBoundaryCondition {
 
       auto solve(const Real air_temp, const Real vapor_p,
             const Real radius) const {
-        const int max_iter = 32;
-        const Real abstol = 1e-6;
-        const Real t_min = 10.;
-        const Real t_max = 1000.;
+        const int max_iter = 64;
+        const Real abstol = 1e-12;
+        const Real f_min = 0.;
+        const Real f_max = 1000.;
 
-        const auto nr_solver = NewtonRaphsonSolver(
-          max_iter, abstol, t_min, t_max
-        );
+        // const auto solver = BisectSolver(max_iter, abstol);
+        const auto solver = NewtonRaphsonSolver(max_iter, abstol);
 
-        auto f = [this, air_temp, vapor_p](auto ice_temp) {
-          return wall.energy_flux(ice_temp, air_temp, vapor_p);
+        auto g = [this, air_temp, radius](auto energy_flux) {
+          const auto surf_temp = radiation.outer_surface_temp(energy_flux);
+          return conduction.energy_flux(
+            surf_temp, air_temp, (0.5 * M_PI) * radius
+          ) - energy_flux;
         };
-        const Real ice_temp_guess = nr_solver.solve(f, air_temp);
 
-        auto g = [this, ice_temp_guess, radius](auto surf_temp) {
-          return (
-            radiation.energy_flux(surf_temp)
-            - conduction.energy_flux(
-                surf_temp, ice_temp_guess, (0.5 * M_PI) * radius
-            )
+        // const Real f_max = solver.solve(g, f_min, f_max_0);
+        const Real f_guess = solver.solve(g, f_min, f_min, f_max);
+
+        auto f = [this, air_temp, vapor_p, radius](auto energy_flux) {
+          const auto surf_temp = radiation.outer_surface_temp(energy_flux);
+          const auto ice_temp = conduction.inner_surface_temp(
+            surf_temp, energy_flux, (0.5 * M_PI) * radius
           );
+          const auto wall_energy_flux = wall.energy_flux(
+            ice_temp, air_temp, vapor_p);
+          return wall_energy_flux - energy_flux;
         };
-        const Real surf_temp = nr_solver.solve(g, radiation.effective_temp);
 
-        const Real total_energy_flux = conduction.energy_flux(
-            surf_temp, ice_temp_guess, radius
+        // const Real energy_flux = solver.solve(f, f_min, f_max);
+        const Real energy_flux = solver.solve(f, f_guess, f_min, f_max);
+        const Real surf_temp = radiation.outer_surface_temp(energy_flux);
+        const Real ice_temp = conduction.inner_surface_temp(
+            surf_temp, energy_flux, (0.5 * M_PI) * radius
         );
-        auto h = [this, air_temp, vapor_p, total_energy_flux](auto ice_temp) {
-          return (
-              wall.energy_flux(ice_temp, air_temp, vapor_p)
-              - total_energy_flux
-          );
-        };
-        const Real ice_temp = nr_solver.solve(h, ice_temp_guess);
 
         const Real e = wall.net_vapor_flux(ice_temp, air_temp, vapor_p);
         const Real q = wall.sensible_heat_flux(ice_temp, air_temp);
@@ -197,7 +253,7 @@ namespace WallBoundaryCondition {
           Real total_energy_flux;
           Real evaporation;
           Real sensible_heat_flux;
-        } solution = {ice_temp, total_energy_flux, e, q};
+        } solution = {ice_temp, energy_flux, e, q};
         return solution;
       }
   };

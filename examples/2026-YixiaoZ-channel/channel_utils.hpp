@@ -11,8 +11,8 @@ auto square(const T x) {
 template<class Real>
 class IdealGas {
   public:
-    Real gas_constant;
-    Real specific_cv;
+    const Real gas_constant;
+    const Real specific_cv;
 
     IdealGas(const Real gas_constant, const Real specific_cv):
       gas_constant(gas_constant), specific_cv(specific_cv) {
@@ -37,11 +37,11 @@ class IdealGas {
 template<class Real>
 class CondensedMatter {
   public:
-    IdealGas<Real> gas;
-    Real temp3;
-    Real pres3;
-    Real beta;
-    Real delta;
+    const IdealGas<Real> gas;
+    const Real temp3;
+    const Real pres3;
+    const Real beta;
+    const Real delta;
 
     CondensedMatter(const IdealGas<Real> &gas,
         const Real temp3, const Real pres3,

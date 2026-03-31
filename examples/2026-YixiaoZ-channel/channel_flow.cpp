@@ -31,6 +31,8 @@ constexpr int i_span = 3;
 
 constexpr Real x_flow_exit = 0.;
 
+constexpr Real max_nu = 1.;
+
 Real g_wall_delta;
 Real g_wall_x_abstol;
 
@@ -41,7 +43,7 @@ inline bool is_masked(Real x_norm, Real x_flow) {
   );
 }
 
-inline bool is_ice_wall_boundary(MeshBlock *pmb, const int axis,
+inline bool is_ice_wall_boundary(MeshBlock *pmb,
       const int k, const int j, const int i) {
   const Real xv_norm = get_xv(pmb, i_norm, k, j, i);
   const Real xv_flow = get_xv(pmb, i_flow, k, j, i);
@@ -53,18 +55,51 @@ inline bool is_ice_wall_boundary(MeshBlock *pmb, const int axis,
   );
 }
 
-enum class ProblemType {
-  LongChannel,
-  NudgedShortChannel,
+inline Real get_mu(Real mu, Real rho) {
+  return std::min(mu / rho, max_nu);
+}
+
+inline Real get_cp(const int n_species) {
+  auto pthermo = Thermodynamics::GetInstance();
+  return (
+      pthermo->GetRd() * (
+        (pthermo->GetCvRatio(n_species) / (pthermo->GetGammad() - 1.))
+        + pthermo->GetInvMuRatio(n_species)
+      )
+  );
+}
+
+template<class Real>
+class DensityForcing {
+  public:
+    const int n_species;
+    const Real cp;
+
+    DensityForcing(const int n_species):
+      n_species(n_species), cp(get_cp(n_species)) {}
+
+    inline void apply(StrideIterator<Real*> u, StrideIterator<Real*> w,
+                      const Real drho, const Real source_temp) const {
+        auto pthermo = Thermodynamics::GetInstance();
+        const Real t_exchange = (
+          (drho > 0) ? source_temp
+          : pthermo->GetTemp(w)
+        );
+        const Real u_exchange = (drho > 0) ? 0. : w[IVX];
+        const Real v_exchange = (drho > 0) ? 0. : w[IVY];
+        const Real w_exchange = (drho > 0) ? 0. : w[IVZ];
+
+        u[n_species] += drho;
+        u[IEN] += drho * (
+          cp * t_exchange + 0.5 * (
+            square(u_exchange) + square(v_exchange) + square(w_exchange)
+          )
+        );
+        u[IVX] += drho * u_exchange;
+        u[IVY] += drho * v_exchange;
+        u[IVZ] += drho * w_exchange;
+    }
 };
-
-constexpr int buffer_size = 1000;
-
-Real g_ice_temp[buffer_size];
-Real g_evaporation[buffer_size];
-Real g_sensible_heat_flux[buffer_size];
-Real g_total_energy_flux[buffer_size];
-
 
 void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
                      AthenaArray<Real> const &w, AthenaArray<Real> const &r,
@@ -72,62 +107,50 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
                      AthenaArray<Real> &s) {
   auto pthermo = Thermodynamics::GetInstance();
 
-  const Real nu_iso = pmb->phydro->hdif.nu_iso;
   const Real kappa_iso = pmb->phydro->hdif.kappa_iso;
 
-  const Real cp = (
-      pthermo->GetRd() * (
-        (pthermo->GetCvRatio(i_vapor) / (pthermo->GetGammad() - 1.))
-        + pthermo->GetInvMuRatio(i_vapor)
-      )
-  );
+  const Real gas_cp = get_cp(i_vapor);
+
+  const auto vapor_density_forcing = DensityForcing<Real>(i_vapor);
+  const auto solid_density_forcing = DensityForcing<Real>(i_solid);
 
   for (int k = pmb->ks; k <= pmb->ke; ++k) {
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
-        if (is_ice_wall_boundary(pmb, i_norm, k, j, i)) {
-          const auto w_kji = w.at(k, j, i);
+        const auto w_kji = w.at(k, j, i);
+        auto u_kji = w.at(k, j, i);
+        const Real rho = w_kji[IDN];
+        if (is_ice_wall_boundary(pmb, k, j, i)) {
           const Real dx = get_dxf(pmb, i_norm, k, j, i);
           const auto solver = WallBoundaryCondition::build_solver(
-            0.5 * dx, kappa_iso * cp
+            0.5 * dx, get_mu(kappa_iso, rho) * rho * gas_cp
           );
 
           const Real distance = x_flow_exit - get_xv(pmb, i_flow, k, j, i);
 
-          Real air_temp = pthermo->GetTemp(w_kji);
+          const Real air_temp = pthermo->GetTemp(w_kji);
 
-          Real vapor_p = (
+          const Real vapor_p = (
               w_kji[IDN] * w_kji[i_vapor] * air_temp
               * pthermo->GetRd() * pthermo->GetInvMuRatio(i_vapor)
           );
+
           auto bc = solver.solve(air_temp, vapor_p, distance);
 
           u(IEN, k, j, i) -= dt * bc.sensible_heat_flux / dx;
-          const Real drho = dt * bc.evaporation / dx;
 
-          const Real t_exchange = (drho > 0) ? bc.ice_temp : air_temp;
-          const Real u_exchange = (drho > 0) ? 0. : w_kji[IVX];
-          const Real v_exchange = (drho > 0) ? 0. : w_kji[IVY];
-          const Real w_exchange = (drho > 0) ? 0. : w_kji[IVZ];
+          const Real drho_vapor = dt * bc.evaporation / dx;
+          vapor_density_forcing.apply(u_kji, w_kji, drho_vapor, bc.ice_temp);
 
-          u(i_vapor, k, j, i) += drho;
-          u(IEN, k, j, i) += drho * (
-            cp * t_exchange + 0.5 * (
-              square(u_exchange) + square(v_exchange) + square(w_exchange)
-            )
-          );
-          u(IVX, k, j, i) += drho * u_exchange;
-          u(IVY, k, j, i) += drho * v_exchange;
-          u(IVZ, k, j, i) += drho * w_exchange;
+          const Real solid_density = w_kji[IDN] * w_kji[i_solid];
+          const Real drho_solid = -0.5 * solid_density;
+          solid_density_forcing.apply(u_kji, w_kji, drho_solid, bc.ice_temp);
 
-          const int i_out = get_axis_i(i_flow, k, j, i);
-          if (i_out > buffer_size - 1) {
-            std::cout << "buffer_size is too small." << std::endl;
-          }
-          g_ice_temp[i_out] = bc.ice_temp;
-          g_total_energy_flux[i_out] = bc.total_energy_flux;
-          g_evaporation[i_out] = bc.evaporation;
-          g_sensible_heat_flux[i_out] = bc.sensible_heat_flux;
+          pmb->user_out_var(1, k, j, i) = bc.ice_temp;
+          pmb->user_out_var(2, k, j, i) = bc.evaporation;
+          pmb->user_out_var(3, k, j, i) = bc.sensible_heat_flux;
+          pmb->user_out_var(4, k, j, i) = bc.total_energy_flux;
+          pmb->user_out_var(5, k, j, i) = drho_solid * dx / dt;
         }
       }
     }
@@ -141,6 +164,8 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
   auto pthermo = Thermodynamics::GetInstance();
   auto water_ice_eos = WaterIceEOS();
 
+  const auto vapor_density_forcing = DensityForcing<Real>(i_vapor);
+
   for (int k = pmb->ks; k <= pmb->ke; ++k) {
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
@@ -150,7 +175,7 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
             && !is_masked(x_norm, x_flow)) {
           const Real p = pmb->phydro->w(IPR, k, j, i);
           const Real d = get_dxf(pmb, i_flow, k, j, i);
-          const Real drho= dt * (
+          const Real drho = dt * (
               std::max(water_ice_eos.pres3 - p, 0.)
               / (
                 sqrt(
@@ -159,80 +184,13 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
                 ) * d
               )
           );
-          u(i_vapor, k, j, i) += drho;
-          u(IEN, k, j, i) += (
-              drho * water_ice_eos.gas.specific_enthalpy(water_ice_eos.temp3)
-          );
+
+          vapor_density_forcing.apply(u.at(k, j, i), w.at(k, j, i),
+            drho, water_ice_eos.temp3);
         }
       }
     }
   }
-}
-
-Real get_density(StrideIterator<Real*> w) {
-  return w[IDN];
-}
-
-Real get_massflux(StrideIterator<Real*> w) {
-  return w[IDN] * w[IVX + i_flow - 1];
-}
-
-Real get_energy(StrideIterator<Real*> w) {
-  auto pthermo = Thermodynamics::GetInstance();
-  return w[IDN] * (
-    pthermo->GetInternalEnergy(w)
-    + 0.5 * (
-      square(w[IVX])
-      + square(w[IVY])
-      + square(w[IVZ])
-    )
-  );
-}
-
-void Nudge(MeshBlock *pmb, Real const time, Real const dt,
-                     AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-                     AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-                     AthenaArray<Real> &s) {
-
-  auto pthermo = Thermodynamics::GetInstance();
-
-  const Real mean_density = get_domain_average(get_density, pmb, w);
-  const Real mean_massflux = get_domain_average(get_massflux, pmb, w);
-  const Real mean_energy = get_domain_average(get_energy, pmb, w);
-
-  const static Real prescribed_density = mean_density;
-  const static Real prescribed_massflux = mean_massflux;
-  const static Real prescribed_energy = mean_energy;
-
-  const Real relaxation_rate = 0.2;
-
-  const Real src_density = relaxation_rate * (
-    prescribed_density - mean_density);
-  const Real src_velocity = relaxation_rate * (
-    prescribed_massflux - mean_massflux) / mean_density;
-  const Real src_energy = relaxation_rate * (
-    prescribed_energy - mean_energy) / mean_density;
-
-  for (int k = pmb->ks; k <= pmb->ke; ++k) {
-    for (int j = pmb->js; j <= pmb->je; ++j) {
-      for (int i = pmb->is; i <= pmb->ie; ++i) {
-        const auto w_kji = w.at(k, j, i);
-        const Real density = w_kji[IDN];
-        // u(i_vapor, k, j, i) += src_density;
-        u(IVX + i_flow - 1, k, j, i) += src_velocity * density;
-        u(IEN, k, j, i) += src_energy * density;
-      }
-    }
-  }
-}
-
-
-void Forcing(MeshBlock *pmb, Real const time, Real const dt,
-             AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-             AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-             AthenaArray<Real> &s) {
-  WallInteraction(pmb, time, dt, w, r, bcc, u, s);
-  BottomInjection(pmb, time, dt, w, r, bcc, u, s);
 }
 
 void WaterVaporConduction(HydroDiffusion *phdif, MeshBlock *pmb, const AthenaArray<Real> &prim,
@@ -240,18 +198,15 @@ void WaterVaporConduction(HydroDiffusion *phdif, MeshBlock *pmb, const AthenaArr
                      int is, int ie, int js, int je, int ks, int ke) {
   auto pthermo = Thermodynamics::GetInstance();
 
-  const Real cp = (
-      pthermo->GetRd() * (
-        (pthermo->GetCvRatio(i_vapor) / (pthermo->GetGammad() - 1.))
-        + pthermo->GetInvMuRatio(i_vapor)
-      )
-  );
+  const Real gas_cp = get_cp(i_vapor);
 
   for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=is; i<=ie; ++i) {
+        const Real rho = prim(IDN, k, j, i);
+        const Real kappa = get_mu(phdif->kappa_iso, rho);
         phdif->kappa(HydroDiffusion::DiffProcess::iso, k, j, i) = (
-          phdif->kappa_iso * cp
+          kappa * rho * gas_cp
         );
       }
     }
@@ -265,8 +220,10 @@ void WaterVaporViscosity(HydroDiffusion *phdif, MeshBlock *pmb, const AthenaArra
   for (int k=ks; k<=ke; ++k) {
     for (int j=js; j<=je; ++j) {
       for (int i=is; i<=ie; ++i) {
+        const Real rho = prim(IDN, k, j, i);
+        const Real nu = get_mu(phdif->nu_iso, rho);
         phdif->nu(HydroDiffusion::DiffProcess::iso, k, j, i) = (
-          phdif->nu_iso / prim(IDN, k, j, i)
+          nu
         );
       }
     }
@@ -285,20 +242,63 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   }
 
   g_wall_delta = pin->GetReal("problem", "wall_delta");
-  g_wall_x_abstol = 1e-8 * g_wall_delta;
+  g_wall_x_abstol = 1e-8 * std::abs(g_wall_delta);
 
-  EnrollUserExplicitSourceFunction(Forcing);
+  const static bool forcing_wall_interaction = pin->GetBoolean("problem",
+    "forcing_wall_interaction");
+  const static bool forcing_bottom_ejection = pin->GetBoolean("problem",
+    "forcing_bottom_ejection");
+
+  auto _forcing = [](MeshBlock *pmb, Real const time, Real const dt,
+               AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+               AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+               AthenaArray<Real> &s) -> void {
+    if (forcing_wall_interaction) {
+      WallInteraction(pmb, time, dt, w, r, bcc, u, s);
+    }
+    if (forcing_bottom_ejection) {
+      BottomInjection(pmb, time, dt, w, r, bcc, u, s);
+    }
+  };
+
+  EnrollUserExplicitSourceFunction(_forcing);
   EnrollViscosityCoefficient(WaterVaporViscosity);
   EnrollConductionCoefficient(WaterVaporConduction);
+
+  if (pin->GetReal("mesh", "x1rat") < 0) {
+    const static Real nxc = pin->GetReal("problem", "nx_half_conduit");
+    const static Real nxd = 0.5 * pin->GetReal("mesh",
+      std::string("nx") + std::to_string(i_norm));
+    const static Real rat = pin->GetReal("problem", "xnorm_rat");
+
+    auto my_mesh_spacing_x1 = [](const Real t0, const RegionSize rs) -> Real {
+      const Real t1 = 2 * t0 - 1;
+      const Real s = std::copysign(static_cast<Real>(1), t1);
+      const Real t = s * t1;
+
+      const Real n = t * nxd;
+      const Real dx = g_wall_delta / nxc;
+
+      const Real x_abs = (
+        (n < nxc) ?
+        (n * dx)
+        : (g_wall_delta + dx * std::pow(rat, n - nxc) / (rat - 1)
+        )
+      );
+      return std::copysign(x_abs, s);
+    };
+    EnrollUserMeshGenerator(X1DIR, my_mesh_spacing_x1);
+  }
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(5);
+  AllocateUserOutputVariables(6);
   SetUserOutputVariableName(0, "temp");
   SetUserOutputVariableName(1, "ice_temp");
   SetUserOutputVariableName(2, "evaporation");
   SetUserOutputVariableName(3, "sensible_heat_flux");
   SetUserOutputVariableName(4, "total_energy_flux");
+  SetUserOutputVariableName(5, "ice_mass_flux");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
@@ -309,16 +309,6 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
         user_out_var(0, k, j, i) = pthermo->GetTemp(w.at(k, j, i));
-
-        const int i_out = get_axis_i(i_flow, k, j, i);
-        if (i_out > buffer_size - 1) {
-          std::cout << "buffer_size is too small." << std::endl;
-        }
-
-        user_out_var(1, k, j, i) = g_ice_temp[i_out];
-        user_out_var(2, k, j, i) = g_evaporation[i_out];
-        user_out_var(3, k, j, i) = g_sensible_heat_flux[i_out];
-        user_out_var(4, k, j, i) = g_total_energy_flux[i_out];
       }
     }
   }
@@ -329,7 +319,7 @@ void reflecting_inner_x2(MeshBlock *pmb, Coordinates *pco,
                         Real dt, int il, int iu, int jl, int ju, int kl, int ku,
                         int ngh) {
   for (int n = 0; n < NHYDRO; ++n) {
-    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
     for (int k = kl; k <= ku; ++k) {
       for (int j = 1; j <= ngh; ++j) {
         for (int i = il; i <= iu; ++i) {
@@ -345,7 +335,7 @@ void reflecting_outer_x2(MeshBlock *pmb, Coordinates *pco,
                         Real dt, int il, int iu, int jl, int ju, int kl, int ku,
                         int ngh) {
   for (int n = 0; n < NHYDRO; ++n) {
-    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
     for (int k = kl; k <= ku; ++k) {
       for (int j = 1; j <= ngh; ++j) {
         for (int i = il; i <= iu; ++i) {
@@ -362,7 +352,7 @@ void reflecting_inner_x1(MeshBlock *pmb, Coordinates *pco,
                         Real dt, int il, int iu, int jl, int ju, int kl, int ku,
                         int ngh) {
   for (int n = 0; n < NHYDRO; ++n) {
-    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
     for (int k = kl; k <= ku; ++k) {
       for (int j = jl; j <= ju; ++j) {
         for (int i = 1; i <= ngh; ++i) {
@@ -378,7 +368,7 @@ void reflecting_outer_x1(MeshBlock *pmb, Coordinates *pco,
                          Real dt, int il, int iu, int jl, int ju, int kl,
                          int ku, int ngh) {
   for (int n = 0; n < NHYDRO; ++n) {
-    const int sign = (IVY <= n && n <= IVZ) ? -1 : 1;
+    const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
     for (int k = kl; k <= ku; ++k) {
       for (int j = jl; j <= ju; ++j) {
         for (int i = 1; i <= ngh; ++i) {
@@ -404,7 +394,6 @@ auto get_user_boundary_function(T bf) {
     throw std::runtime_error("Unknown BoundaryFace");
   }
 }
-
 
 template <class T>
 auto get_boundary_center(MeshBlock *pblock, T bf) {
@@ -442,8 +431,13 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
   auto water_ice_eos = WaterIceEOS();
   const Real temperature = water_ice_eos.temp3;
   const Real bottom_pressure = water_ice_eos.pres_sat(temperature);
+  const Real outerspace_pressure = pin->GetReal("problem",
+    "outerspace_pressure");
   const Real x_flow_bottom = get_xmin(this, i_flow);
-  const Real scale_height = 0.3 * (x_flow_exit - x_flow_bottom);
+  const Real gamma = (
+    std::log(bottom_pressure / outerspace_pressure)
+    / (x_flow_exit - x_flow_bottom)
+  );
 
   for (int k = ks; k <= ke; ++k) {
     for (int j = js; j <= je; ++j) {
@@ -455,7 +449,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
           bottom_pressure
           * ((is_masked(x_norm, x_flow)) ?
             0.99
-            : std::exp(-(std::min(x_flow, x_flow_exit) - x_flow_bottom) / scale_height)
+            : std::exp(-gamma * (std::min(x_flow, x_flow_exit) - x_flow_bottom))
           )
         );
         const Real density = water_ice_eos.gas.density(temperature, pressure);

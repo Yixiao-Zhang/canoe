@@ -1438,12 +1438,14 @@ void Thermodynamics::EquilibrateUV(Real dt) const {
   Real temp = thermo.temperature();
   Real density = thermo.density();
 
-  auto eq_state = eq.find_equilibrium(temp, density, yfrac(0), yfrac(1));
+  const auto eq_state = eq.find_equilibrium(temp, density, yfrac(0), yfrac(1));
+
+  const Real min_gas_frac = 0.1;
 
   temp = eq_state.temp;
   yfrac(0) = eq_state.dry_frac;
-  yfrac(1) = eq_state.vapor_frac;
-  yfrac(2) = 1. - eq_state.dry_frac - eq_state.vapor_frac;
+  yfrac(1) = std::max(eq_state.vapor_frac, min_gas_frac - yfrac(0));
+  yfrac(2) = 1. - yfrac(0) - yfrac(1);
 
   thermo.setMassFractions(yfrac.data());
   thermo.setTemperature(temp);
