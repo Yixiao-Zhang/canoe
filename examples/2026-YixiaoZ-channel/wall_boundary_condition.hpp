@@ -259,7 +259,7 @@ namespace WallBoundaryCondition {
   };
 
   template<class Real>
-  auto build_solver(const Real dx, const Real kappa) {
+  auto build_solver(const Real dx, const Real kappa, const Real ice_k) {
     const Real Avogadro = 6.02214076e23;
     const Real Boltzmann = 1.380649e-23;
     const Real atomic_mass_H = 1.008e-3;
@@ -267,12 +267,11 @@ namespace WallBoundaryCondition {
     const Real water_vapor_cp_mol = 37.4;
     const Real temp3 = 273.16;
     const Real pres3 = 611.7;
-    const Real beta = 24.845;
-    const Real delta = 4.986;
+    const Real beta = 22.46;
+    const Real delta = 0.;
 
     const Real outer_surface_temp_eff = 67;
     const Real stefan_boltzmann_const = 5.67e-8;
-    const Real ice_k = 651.;
 
     const Real boundary_k = kappa / dx;
 

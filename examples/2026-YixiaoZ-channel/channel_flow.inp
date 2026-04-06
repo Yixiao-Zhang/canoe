@@ -9,19 +9,19 @@ tasklist    = ImplicitHydroTasks
 
 <output1>
 file_type   = hst           # History data dump
-dt          = 0.1          # time increment between outputs
+dt          = 0.01          # time increment between outputs
 # dcycle = 1
 
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 0.1           # time increment between outputs
+dt          = 0.01           # time increment between outputs
 # dcycle = 1
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 0.1           # time increment
+dt          = 0.01           # time increment
 # dcycle = 1
 
 <output4>
@@ -36,19 +36,18 @@ xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 <mesh>
-nx1         = 240
-x1min       = -123.53896372957814
-x1max       = 123.53896372957814
+nx1         = 72
+x1min       = -0.6965268235105487
+x1max       = 0.6965268235105487
 ix1_bc      = outflow
 ox1_bc      = outflow
 x1rat       = -1.
 
-nx2         = 1125
-x2min       = -1000.
-x2max       = 125.
-ix2_bc      = reflecting
-ox2_bc      = outflow
-
+nx2         = 1
+x2min       = -550
+x2max       = -450.
+ix2_bc      = periodic
+ox2_bc      = periodic
 
 nx3         = 1
 x3min       = 0.
@@ -57,13 +56,15 @@ ix3_bc      = periodic
 ox3_bc      = periodic
 
 <meshblock>
-nx1         = 48
-nx2         = 125
+nx1         = 24
+nx2         = 1
 nx3         = 1
 
 <hydro>
 gamma      = 1.4        # gamma = C_pd/C_vd
 implicit_flag = 0
+
+grav_acc2 = 30.
 
 <problem>
 thermodynamics_config = geyser_h2o.yaml
@@ -71,12 +72,14 @@ thermodynamics_config = geyser_h2o.yaml
 nu_iso = 12e-6
 kappa_iso = 12e-6
 
-forcing_wall_interaction = true
-forcing_bottom_ejection = true
+forcing_wall_interaction = false
+forcing_bottom_ejection = false
 
 outerspace_pressure = 1e-1
 
 wall_delta = 0.1
 
-nx_half_conduit = 24
+ice_k = 651.
+
+nx_half_conduit = 12
 xnorm_rat = 1.085

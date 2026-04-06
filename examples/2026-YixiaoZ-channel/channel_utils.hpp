@@ -87,8 +87,8 @@ inline auto WaterIceEOS() {
 
   const Real temp3 = 273.16;
   const Real pres3 = 611.7;
-  const Real beta = 24.845;
-  const Real delta = 4.986;
+  const Real beta = 22.46;
+  const Real delta = 0.;
 
   IdealGas<Real> water_vapor(water_gas_constant, water_vapor_cv);
   CondensedMatter<Real> water_ice(water_vapor, temp3, pres3, beta, delta);

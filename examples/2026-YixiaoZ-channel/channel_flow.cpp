@@ -35,6 +35,7 @@ constexpr Real max_nu = 1.;
 
 Real g_wall_delta;
 Real g_wall_x_abstol;
+Real g_ice_k;
 
 inline bool is_masked(Real x_norm, Real x_flow) {
   return (
@@ -123,7 +124,7 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
         if (is_ice_wall_boundary(pmb, k, j, i)) {
           const Real dx = get_dxf(pmb, i_norm, k, j, i);
           const auto solver = WallBoundaryCondition::build_solver(
-            0.5 * dx, get_mu(kappa_iso, rho) * rho * gas_cp
+            0.5 * dx, get_mu(kappa_iso, rho) * rho * gas_cp, g_ice_k
           );
 
           const Real distance = x_flow_exit - get_xv(pmb, i_flow, k, j, i);
@@ -241,6 +242,8 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
     throw std::runtime_error("i_solid does not match");
   }
 
+  g_ice_k = pin->GetReal("problem", "ice_k");
+
   g_wall_delta = pin->GetReal("problem", "wall_delta");
   g_wall_x_abstol = 1e-8 * std::abs(g_wall_delta);
 
@@ -282,9 +285,10 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
       const Real x_abs = (
         (n < nxc) ?
         (n * dx)
-        : (g_wall_delta + dx * std::pow(rat, n - nxc) / (rat - 1)
+        : (g_wall_delta + dx * (std::pow(rat, n - nxc) - 1.) / (rat - 1.)
         )
       );
+
       return std::copysign(x_abs, s);
     };
     EnrollUserMeshGenerator(X1DIR, my_mesh_spacing_x1);

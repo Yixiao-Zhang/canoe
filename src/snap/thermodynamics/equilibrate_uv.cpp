@@ -1420,8 +1420,8 @@ void Thermodynamics::EquilibrateUV(Real dt) const {
 
   const Real temp3 = 273.16;
   const Real pres3 = 611.7;
-  const Real beta = 24.845;
-  const Real delta = 4.986;
+  const Real beta = 22.46;
+  const Real delta = 0.;
 
   IdealGas<Real> dry(dry_gas_constant, dry_cv);
   IdealGas<Real> water_vapor(water_gas_constant, water_vapor_cv);
