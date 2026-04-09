@@ -9,24 +9,21 @@ tasklist    = ImplicitHydroTasks
 
 <output1>
 file_type   = hst           # History data dump
-dt          = 0.01          # time increment between outputs
-# dcycle = 1
+dt          = 0.1          # time increment between outputs
 
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 0.01           # time increment between outputs
-# dcycle = 1
+dt          = 0.1           # time increment between outputs
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 0.01           # time increment
-# dcycle = 1
+dt          = 0.1           # time increment
 
 <output4>
 file_type   = rst           # History data dump
-dt          = 10000.        # time increment between outputs
+dt          = 10.           # time increment between outputs
 
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
@@ -36,18 +33,19 @@ xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 <mesh>
-nx1         = 72
-x1min       = -0.6965268235105487
-x1max       = 0.6965268235105487
+nx1         = 120
+x1min = -4.9226650089304655
+x1max = 4.9226650089304655
 ix1_bc      = outflow
 ox1_bc      = outflow
 x1rat       = -1.
 
-nx2         = 1
-x2min       = -550
-x2max       = -450.
-ix2_bc      = periodic
-ox2_bc      = periodic
+nx2         = 225
+x2min = -1000.0
+x2max = 125.0
+ix2_bc      = reflecting
+ox2_bc      = outflow
+
 
 nx3         = 1
 x3min       = 0.
@@ -57,29 +55,29 @@ ox3_bc      = periodic
 
 <meshblock>
 nx1         = 24
-nx2         = 1
+nx2         = 25
 nx3         = 1
 
 <hydro>
 gamma      = 1.4        # gamma = C_pd/C_vd
 implicit_flag = 0
 
-grav_acc2 = 30.
-
 <problem>
 thermodynamics_config = geyser_h2o.yaml
+
+initialize_with_ncfile = true
 
 nu_iso = 12e-6
 kappa_iso = 12e-6
 
-forcing_wall_interaction = false
-forcing_bottom_ejection = false
+forcing_wall_interaction = true
+forcing_bottom_ejection = true
 
-outerspace_pressure = 1e-1
+outerspace_pressure = 1e-5
 
 wall_delta = 0.1
 
-ice_k = 651.
+ice_k = 651.0
 
 nx_half_conduit = 12
 xnorm_rat = 1.085

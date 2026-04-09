@@ -22,6 +22,7 @@
 
 #include "wall_boundary_condition.hpp"
 #include "channel_utils.hpp"
+#include "structured_interpolator.hpp"
 
 constexpr int i_vapor = 1;
 constexpr int i_solid = 2;
@@ -431,35 +432,71 @@ auto get_boundary_center(MeshBlock *pblock, T bf) {
 
 void MeshBlock::ProblemGenerator(ParameterInput *pin) {
 
-  auto pthermo = Thermodynamics::GetInstance();
-  auto water_ice_eos = WaterIceEOS();
-  const Real temperature = water_ice_eos.temp3;
-  const Real bottom_pressure = water_ice_eos.pres_sat(temperature);
-  const Real outerspace_pressure = pin->GetReal("problem",
-    "outerspace_pressure");
-  const Real x_flow_bottom = get_xmin(this, i_flow);
-  const Real gamma = (
-    std::log(bottom_pressure / outerspace_pressure)
-    / (x_flow_exit - x_flow_bottom)
-  );
+  const bool initialize_with_ncfile = pin->GetOrAddBoolean("problem",
+    "initialize_with_ncfile", false);
 
-  for (int k = ks; k <= ke; ++k) {
-    for (int j = js; j <= je; ++j) {
-      for (int i = is; i <= ie; ++i) {
-        const Real x_norm = get_xv(this, i_norm, k, j, i);
-        const Real x_flow = get_xv(this, i_flow, k, j, i);
+  if (initialize_with_ncfile) {
+    const std::string ncfile("init.nc");
+    CoordinateSystem<double, 4> coord("x1", "x2", "x3", "time");
 
-        const Real pressure = (
-          bottom_pressure
-          * ((is_masked(x_norm, x_flow)) ?
-            0.99
-            : std::exp(-gamma * (std::min(x_flow, x_flow_exit) - x_flow_bottom))
-          )
-        );
-        const Real density = water_ice_eos.gas.density(temperature, pressure);
-        phydro->w(IDN, k, j, i) = density;
-        phydro->w(i_vapor, k, j, i) = 1.;
-        phydro->w(IPR, k, j, i) = pressure;
+    const std::array<std::string, NHYDRO> variable_names{
+      "rho", "H2O", "H2O(s)", "vel1", "vel2", "vel3", "press"
+    };
+
+    std::vector<decltype(coord)::Field> fields;
+    fields.reserve(variable_names.size());
+
+    for (const auto& name : variable_names) {
+      fields.push_back(coord.load(ncfile, name));
+    }
+
+    const Real time = 0.;
+    for (int k = ks; k <= ke; ++k) {
+      for (int j = js; j <= je; ++j) {
+        for (int i = is; i <= ie; ++i) {
+          const Real x3 = pcoord->x3v(k);
+          const Real x2 = pcoord->x2v(j);
+          const Real x1 = pcoord->x1v(i);
+          const auto loc = coord.location(x1, x2, x3, time);
+          for (int n = 0; n < NHYDRO; ++n){
+            phydro->w(n, k, j, i) = fields[n].interpolate(loc);
+          }
+        }
+      }
+    }
+  } else {
+    auto pthermo = Thermodynamics::GetInstance();
+    auto water_ice_eos = WaterIceEOS();
+    const Real temperature = water_ice_eos.temp3;
+    const Real bottom_pressure = water_ice_eos.pres_sat(temperature);
+    const Real outerspace_pressure = pin->GetReal("problem",
+      "outerspace_pressure");
+    const Real x_flow_bottom = get_xmin(this, i_flow);
+    const Real gamma = (
+      std::log(bottom_pressure / outerspace_pressure)
+      / (x_flow_exit - x_flow_bottom)
+    );
+
+    for (int k = ks; k <= ke; ++k) {
+      for (int j = js; j <= je; ++j) {
+        for (int i = is; i <= ie; ++i) {
+          const Real x_norm = get_xv(this, i_norm, k, j, i);
+          const Real x_flow = get_xv(this, i_flow, k, j, i);
+
+          const Real pressure = (
+            bottom_pressure
+            * ((is_masked(x_norm, x_flow)) ?
+              0.99
+              : std::exp(-gamma * (
+                std::min(x_flow, x_flow_exit) - x_flow_bottom
+              ))
+            )
+          );
+          const Real density = water_ice_eos.gas.density(temperature, pressure);
+          phydro->w(IDN, k, j, i) = density;
+          phydro->w(i_vapor, k, j, i) = 1.;
+          phydro->w(IPR, k, j, i) = pressure;
+        }
       }
     }
   }
