@@ -297,13 +297,14 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(6);
+  AllocateUserOutputVariables(7);
   SetUserOutputVariableName(0, "temp");
   SetUserOutputVariableName(1, "ice_temp");
   SetUserOutputVariableName(2, "evaporation");
   SetUserOutputVariableName(3, "sensible_heat_flux");
   SetUserOutputVariableName(4, "total_energy_flux");
   SetUserOutputVariableName(5, "ice_mass_flux");
+  SetUserOutputVariableName(6, "mass_flux");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
@@ -314,6 +315,12 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
         user_out_var(0, k, j, i) = pthermo->GetTemp(w.at(k, j, i));
+
+        Real mass_flux = 0.;
+        for (int n = 0; n < IVX; ++n) {
+          mass_flux += get_center_flux(phydro->flux, i_flow, n, k, j, i);
+        }
+        user_out_var(6, k, j, i) = mass_flux;
       }
     }
   }

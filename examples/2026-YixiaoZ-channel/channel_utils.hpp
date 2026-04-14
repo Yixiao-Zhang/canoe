@@ -189,6 +189,20 @@ inline int get_mpi_rank(const MPI_Comm mpi_world = MPI_COMM_WORLD) {
   return rank;
 }
 
+inline Real get_center_flux(const AthenaArray<Real> (&flux)[], const int axis,
+      const int n, const int k, const int j, const int i) {
+  switch (axis) {
+    case 1:
+      return 0.5 * (flux[X1DIR](n, k, j, i+1) + flux[X1DIR](n, k, j, i));
+    case 2:
+      return 0.5 * (flux[X2DIR](n, k, j+1, i) + flux[X2DIR](n, k, j, i));
+    case 3:
+      return 0.5 * (flux[X3DIR](n, k+1, j, i) + flux[X3DIR](n, k, j, i));
+    default:
+      throw std::runtime_error("Unknown Axis");
+  }
+}
+
 template<typename F>
 double get_domain_average(F f,MeshBlock *pmb, AthenaArray<Real> const &w) {
   double local_sum, global_sum;
