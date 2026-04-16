@@ -120,7 +120,7 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
     for (int j = pmb->js; j <= pmb->je; ++j) {
       for (int i = pmb->is; i <= pmb->ie; ++i) {
         const auto w_kji = w.at(k, j, i);
-        auto u_kji = w.at(k, j, i);
+        auto u_kji = u.at(k, j, i);
         const Real rho = w_kji[IDN];
         if (is_ice_wall_boundary(pmb, k, j, i)) {
           const Real dx = get_dxf(pmb, i_norm, k, j, i);
