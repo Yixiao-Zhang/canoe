@@ -176,19 +176,28 @@ void BottomInjection(MeshBlock *pmb, Real const time, Real const dt,
         if (is_left_boundary(pmb, i_flow, k, j, i)
             && !is_masked(x_norm, x_flow)) {
           const Real p = pmb->phydro->w(IPR, k, j, i);
-          const Real d = get_dxf(pmb, i_flow, k, j, i);
-          const Real drho = dt * (
+          const Real dx = get_dxf(pmb, i_flow, k, j, i);
+          const Real mass_flux = (
               std::max(water_ice_eos.pres3 - p, 0.)
               / (
                 sqrt(
                     2 * M_PI * water_ice_eos.gas.gas_constant
                     * water_ice_eos.temp3
-                ) * d
+                )
               )
           );
 
+          const Real drho = dt * mass_flux / dx;
+
           vapor_density_forcing.apply(u.at(k, j, i), w.at(k, j, i),
             drho, water_ice_eos.temp3);
+
+          const auto iv = IVX - 1 + i_flow;
+
+          u(iv, k, j, i) += (dt / dx) * (
+            w(IPR, k, j, i) + mass_flux * w(iv, k, j, i)
+            - pmb->phydro->flux[X1DIR-1+i_flow](iv, k, j, i)
+          );
         }
       }
     }

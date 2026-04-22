@@ -189,7 +189,7 @@ inline int get_mpi_rank(const MPI_Comm mpi_world = MPI_COMM_WORLD) {
   return rank;
 }
 
-inline Real get_center_flux(const AthenaArray<Real> (&flux)[], const int axis,
+inline Real get_center_flux(const AthenaArray<Real> (&flux)[3], const int axis,
       const int n, const int k, const int j, const int i) {
   switch (axis) {
     case 1:
