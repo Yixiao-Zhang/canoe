@@ -1,0 +1,75 @@
+<comment>
+problem   = Moist rising bubble test
+reference = Bryan and Fritsch, 2002
+configure = --prob=geyser --flux=lmars --nvapor=2 --nphase=2 --nghost=3 -pnetcdf -mpi
+
+<job>
+problem_id  = channel       # problem ID: basename of output filenames
+tasklist    = ImplicitHydroTasks
+
+<output1>
+file_type   = hst           # History data dump
+dt          = 10.          # time increment between outputs
+
+<output2>
+file_type   = pnetcdf       # Netcdf format output
+variable    = prim          # variables to be output
+dt          = 0.01           # time increment between outputs
+
+<output3>
+file_type   = pnetcdf       # Netcdf format output
+variable    = uov           # diagnostic variables
+dt          = 0.01          # time increment
+
+<output4>
+file_type   = rst           # History data dump
+dt          = 10.           # time increment between outputs
+
+<time>
+cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim        = -1            # cycle limit
+tlim        = 1.            # time limit
+xorder      = 1             # horizontal reconstruction order
+integrator  = rk3           # integration method
+
+<mesh>
+nx1         = 100
+x1min       = 0.
+x1max       = 1.
+ix1_bc      = user
+ox1_bc      = outflow
+
+nx2         = 200
+x2min       = -1.
+x2max       = 1.
+ix2_bc      = outflow
+ox2_bc      = outflow
+
+
+nx3         = 1
+x3min       = 0.
+x3max       = 1.
+ix3_bc      = periodic
+ox3_bc      = periodic
+
+<meshblock>
+nx1         = 50
+nx2         = 50
+nx3         = 1
+
+<hydro>
+gamma      = 1.4        # gamma = C_pd/C_vd
+implicit_flag = 0
+
+<problem>
+thermodynamics_config = geyser_h2o.yaml
+
+nu_iso = 12e-6
+kappa_iso = 12e-6
+
+outerspace_pressure = 1e-5
+
+exit_delta = 0.1
+exit_center_velocity = 500.
+exit_temperature = 220.
+

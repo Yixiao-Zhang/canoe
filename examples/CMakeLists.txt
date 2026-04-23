@@ -69,3 +69,7 @@ endif()
 if (${TASK} STREQUAL "channel")
   add_subdirectory(2026-YixiaoZ-channel)
 endif()
+
+if (${TASK} STREQUAL "corner")
+  add_subdirectory(2026-YixiaoZ-corner)
+endif()
