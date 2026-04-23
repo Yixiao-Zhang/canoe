@@ -127,24 +127,53 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
     throw std::runtime_error("i_solid does not match");
   }
 
-  // const static bool forcing_wall_interaction = pin->GetBoolean("problem",
-  //   "forcing_wall_interaction");
-  // const static bool forcing_bottom_ejection = pin->GetBoolean("problem",
-  //   "forcing_bottom_ejection");
+  const static bool forcing_wall_interaction = pin->GetBoolean("problem",
+    "forcing_wall_interaction");
 
-  // auto _forcing = [](MeshBlock *pmb, Real const time, Real const dt,
-  //              AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-  //              AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-  //              AthenaArray<Real> &s) -> void {
-  //   if (forcing_wall_interaction) {
-  //     // WallInteraction(pmb, time, dt, w, r, bcc, u, s);
-  //   }
-  //   if (forcing_bottom_ejection) {
-  //     // BottomInjection(pmb, time, dt, w, r, bcc, u, s);
-  //   }
-  // };
+  if (forcing_wall_interaction) {
+    const static Real exit_delta = pin->GetReal(
+      "problem", "exit_delta");
+    auto _forcing = [](MeshBlock *pmb, Real const time, Real const dt,
+                 AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+                 AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+                 AthenaArray<Real> &s) -> void {
 
-  // EnrollUserExplicitSourceFunction(_forcing);
+      auto pthermo = Thermodynamics::GetInstance();
+      auto water_ice_eos = WaterIceEOS();
+      const auto vapor_density_forcing = DensityForcing<Real>(i_vapor);
+
+      for (int k = pmb->ks; k <= pmb->ke; ++k) {
+        for (int j = pmb->js; j <= pmb->je; ++j) {
+          for (int i = pmb->is; i <= pmb->ie; ++i) {
+            const Real x_norm = get_xv(pmb, i_norm, k, j, i);
+            if (is_left_boundary(pmb, i_flow, k, j, i)
+                && std::abs(x_norm) > exit_delta) {
+              auto w_kji = w.at(k, j, i);
+              const Real dx = get_dxf(pmb, i_flow, k, j, i);
+              const Real mass_flux = (
+                  -w_kji[IPR]
+                  / (
+                    sqrt(
+                        2 * M_PI * water_ice_eos.gas.gas_constant
+                        * pthermo->GetTemp(w_kji)
+                    )
+                  )
+              );
+
+              const Real drho = dt * mass_flux / dx;
+
+              const Real dummy_wall_temp = 0.;
+
+              vapor_density_forcing.apply(u.at(k, j, i), w.at(k, j, i),
+                drho, dummy_wall_temp);
+            }
+          }
+        }
+      }
+    };
+    EnrollUserExplicitSourceFunction(_forcing);
+  }
+
   EnrollViscosityCoefficient(WaterVaporViscosity);
   EnrollConductionCoefficient(WaterVaporConduction);
 
