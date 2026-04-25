@@ -203,6 +203,15 @@ inline Real get_center_flux(const AthenaArray<Real> (&flux)[3], const int axis,
   }
 }
 
+inline Real get_center_mass_flux(const AthenaArray<Real> (&flux)[3],
+      const int axis, const int k, const int j, const int i) {
+  Real mass_flux = 0.;
+  for (int n = 0; n < IVX; ++n) {
+    mass_flux += get_center_flux(flux, axis, n, k, j, i);
+  }
+  return mass_flux;
+}
+
 template<typename F>
 double get_domain_average(F f,MeshBlock *pmb, AthenaArray<Real> const &w) {
   double local_sum, global_sum;

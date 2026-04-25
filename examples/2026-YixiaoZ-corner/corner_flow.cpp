@@ -153,12 +153,14 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
               const Real mass_flux = (
                   -w_kji[IPR]
                   / (
-                    sqrt(
+                    std::sqrt(
                         2 * M_PI * water_ice_eos.gas.gas_constant
                         * pthermo->GetTemp(w_kji)
                     )
                   )
               );
+
+              pmb->user_out_var(3, k, j, i) = mass_flux;
 
               const Real drho = dt * mass_flux / dx;
 
@@ -229,8 +231,11 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(1);
+  AllocateUserOutputVariables(4);
   SetUserOutputVariableName(0, "temp");
+  SetUserOutputVariableName(1, "mass_flux_1");
+  SetUserOutputVariableName(2, "mass_flux_2");
+  SetUserOutputVariableName(3, "mass_flux");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
@@ -241,6 +246,11 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
         user_out_var(0, k, j, i) = pthermo->GetTemp(w.at(k, j, i));
+
+        user_out_var(1, k, j, i) = get_center_mass_flux(
+          phydro->flux, 1, k, j, i);
+        user_out_var(2, k, j, i) = get_center_mass_flux(
+          phydro->flux, 2, k, j, i);
       }
     }
   }

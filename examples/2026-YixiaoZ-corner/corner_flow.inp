@@ -14,12 +14,12 @@ dt          = 10.          # time increment between outputs
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 0.01           # time increment between outputs
+dt          = 1e-2          # time increment between outputs
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 0.01          # time increment
+dt          = 1e-2          # time increment
 
 <output4>
 file_type   = rst           # History data dump
@@ -28,7 +28,7 @@ dt          = 10.           # time increment between outputs
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
-tlim        = 1.            # time limit
+tlim        = 10.           # time limit
 xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
@@ -39,12 +39,12 @@ x1max       = 1.
 ix1_bc      = user
 ox1_bc      = outflow
 
-nx2         = 2000
-x2min       = -10.
-x2max       = 10.
-ix2_bc      = outflow
+nx2         = 100
+x2min       = 0.
+x2max       = 1.
+ix2_bc      = reflecting
 ox2_bc      = outflow
-
+# x2rat       = 1.05
 
 nx3         = 1
 x3min       = 0.
@@ -53,8 +53,8 @@ ix3_bc      = periodic
 ox3_bc      = periodic
 
 <meshblock>
-nx1         = 50
-nx2         = 500
+nx1         = 100
+nx2         = 100
 nx3         = 1
 
 <hydro>
@@ -74,6 +74,6 @@ kappa_iso = 0.
 outerspace_pressure = 1e-5
 
 exit_delta = 0.1
-exit_center_velocity = 300.
+exit_center_velocity = 30.
 exit_temperature = 220.
 
