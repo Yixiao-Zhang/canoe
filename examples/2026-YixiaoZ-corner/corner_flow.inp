@@ -14,12 +14,12 @@ dt          = 10.          # time increment between outputs
 <output2>
 file_type   = pnetcdf       # Netcdf format output
 variable    = prim          # variables to be output
-dt          = 1e-2          # time increment between outputs
+dt          = 1e-3          # time increment between outputs
 
 <output3>
 file_type   = pnetcdf       # Netcdf format output
 variable    = uov           # diagnostic variables
-dt          = 1e-2          # time increment
+dt          = 1e-3          # time increment
 
 <output4>
 file_type   = rst           # History data dump
@@ -28,7 +28,7 @@ dt          = 10.           # time increment between outputs
 <time>
 cfl_number  = 0.4           # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim        = -1            # cycle limit
-tlim        = 10.           # time limit
+tlim        = 0.02          # time limit
 xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 

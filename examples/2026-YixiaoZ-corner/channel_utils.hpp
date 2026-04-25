@@ -98,11 +98,11 @@ inline auto WaterIceEOS() {
 inline int get_axis_i(const int axis,
       const int k, const int j, const int i) {
   switch (axis) {
-    case 1:
+    case X1DIR:
       return i;
-    case 2:
+    case X2DIR:
       return j;
-    case 3:
+    case X3DIR:
       return k;
     default:
       throw std::runtime_error("Unknown Axis");
@@ -113,11 +113,11 @@ inline int get_axis_i(const int axis,
 inline Real get_xv(MeshBlock *pmb, const int axis,
       const int k, const int j, const int i) {
   switch (axis) {
-    case 1:
+    case X1DIR:
       return pmb->pcoord->x1v(i);
-    case 2:
+    case X2DIR:
       return pmb->pcoord->x2v(j);
-    case 3:
+    case X3DIR:
       return pmb->pcoord->x3v(k);
     default:
       throw std::runtime_error("Unknown Axis");
@@ -127,11 +127,11 @@ inline Real get_xv(MeshBlock *pmb, const int axis,
 inline Real get_dxf(MeshBlock *pmb, const int axis,
       const int k, const int j, const int i) {
   switch (axis) {
-    case 1:
+    case X1DIR:
       return pmb->pcoord->dx1f(i);
-    case 2:
+    case X2DIR:
       return pmb->pcoord->dx2f(j);
-    case 3:
+    case X3DIR:
       return pmb->pcoord->dx3f(k);
     default:
       throw std::runtime_error("Unknown Axis");
@@ -140,11 +140,11 @@ inline Real get_dxf(MeshBlock *pmb, const int axis,
 
 inline Real get_xmin(MeshBlock *pmb, const int axis) {
   switch (axis) {
-    case 1:
+    case X1DIR:
       return pmb->pmy_mesh->mesh_size.x1min;
-    case 2:
+    case X2DIR:
       return pmb->pmy_mesh->mesh_size.x2min;
-    case 3:
+    case X3DIR:
       return pmb->pmy_mesh->mesh_size.x3min;
     default:
       throw std::runtime_error("Unknown Axis");
@@ -153,11 +153,11 @@ inline Real get_xmin(MeshBlock *pmb, const int axis) {
 
 inline Real get_xmax(MeshBlock *pmb, const int axis) {
   switch (axis) {
-    case 1:
+    case X1DIR:
       return pmb->pmy_mesh->mesh_size.x1max;
-    case 2:
+    case X2DIR:
       return pmb->pmy_mesh->mesh_size.x2max;
-    case 3:
+    case X3DIR:
       return pmb->pmy_mesh->mesh_size.x3max;
     default:
       throw std::runtime_error("Unknown Axis");
@@ -189,18 +189,32 @@ inline int get_mpi_rank(const MPI_Comm mpi_world = MPI_COMM_WORLD) {
   return rank;
 }
 
+inline Real get_left_flux(const AthenaArray<Real> (&flux)[3], const int axis,
+      const int n, const int k, const int j, const int i) {
+  return flux[axis](n, k, j, i);
+}
+
 inline Real get_center_flux(const AthenaArray<Real> (&flux)[3], const int axis,
       const int n, const int k, const int j, const int i) {
   switch (axis) {
-    case 1:
+    case X1DIR:
       return 0.5 * (flux[X1DIR](n, k, j, i+1) + flux[X1DIR](n, k, j, i));
-    case 2:
+    case X2DIR:
       return 0.5 * (flux[X2DIR](n, k, j+1, i) + flux[X2DIR](n, k, j, i));
-    case 3:
+    case X3DIR:
       return 0.5 * (flux[X3DIR](n, k+1, j, i) + flux[X3DIR](n, k, j, i));
     default:
       throw std::runtime_error("Unknown Axis");
   }
+}
+
+inline Real get_left_mass_flux(const AthenaArray<Real> (&flux)[3],
+      const int axis, const int k, const int j, const int i) {
+  Real mass_flux = 0.;
+  for (int n = 0; n < IVX; ++n) {
+    mass_flux += get_left_flux(flux, axis, n, k, j, i);
+  }
+  return mass_flux;
 }
 
 inline Real get_center_mass_flux(const AthenaArray<Real> (&flux)[3],

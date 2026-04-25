@@ -24,9 +24,9 @@
 
 constexpr int i_vapor = 1;
 constexpr int i_solid = 2;
-constexpr int i_flow = 1;
-constexpr int i_norm = 2;
-constexpr int i_span = 3;
+constexpr int i_flow = X1DIR;
+constexpr int i_norm = X2DIR;
+constexpr int i_span = X3DIR;
 
 constexpr Real x_flow_exit = 0.;
 
@@ -212,11 +212,11 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
               for (int n = IVX; n <= IVZ; ++n) {
                 w[n] = 0.;
               }
-              w[IVX+i_flow-1] += (
+              w[IVX+i_flow] += (
                 center_velocity * (1. - square(x/exit_delta)));
               w[IPR] = pressure;
             } else {
-              auto wi = prim.at(k, j, il + ii);
+              auto wi = prim.at(k, j, il + ii - 1);
               for (int n = 0; n < NHYDRO; ++n) {
                 const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
                 w[n] = sign * wi[n];
@@ -247,10 +247,10 @@ void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
       for (int i = is; i <= ie; ++i) {
         user_out_var(0, k, j, i) = pthermo->GetTemp(w.at(k, j, i));
 
-        user_out_var(1, k, j, i) = get_center_mass_flux(
-          phydro->flux, 1, k, j, i);
-        user_out_var(2, k, j, i) = get_center_mass_flux(
-          phydro->flux, 2, k, j, i);
+        user_out_var(1, k, j, i) = get_left_mass_flux(
+          phydro->flux, X1DIR, k, j, i);
+        user_out_var(2, k, j, i) = get_left_mass_flux(
+          phydro->flux, X2DIR, k, j, i);
       }
     }
   }
