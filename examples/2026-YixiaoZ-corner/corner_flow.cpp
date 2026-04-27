@@ -141,6 +141,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
       auto pthermo = Thermodynamics::GetInstance();
       auto water_ice_eos = WaterIceEOS();
       const auto vapor_density_forcing = DensityForcing<Real>(i_vapor);
+      const auto solid_density_forcing = DensityForcing<Real>(i_solid);
 
       for (int k = pmb->ks; k <= pmb->ke; ++k) {
         for (int j = pmb->js; j <= pmb->je; ++j) {
@@ -168,6 +169,15 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 
               vapor_density_forcing.apply(u.at(k, j, i), w.at(k, j, i),
                 drho, dummy_wall_temp);
+
+              const Real solid_density = w_kji[IDN] * w_kji[i_solid];
+              const Real drho_solid = std::max({
+                w_kji[i_solid] / w_kji[i_vapor] * drho,
+                -0.1 * solid_density,
+              });
+              solid_density_forcing.apply(u.at(k, j, i), w_kji,
+                drho_solid, dummy_wall_temp);
+              pmb->user_out_var(4, k, j, i) = drho_solid * (dx / dt);
             }
           }
         }
@@ -231,11 +241,12 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(4);
+  AllocateUserOutputVariables(5);
   SetUserOutputVariableName(0, "temp");
   SetUserOutputVariableName(1, "mass_flux_1");
   SetUserOutputVariableName(2, "mass_flux_2");
   SetUserOutputVariableName(3, "mass_flux");
+  SetUserOutputVariableName(4, "ice_mass_flux");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {
