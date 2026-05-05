@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "channel_utils.hpp"
+#include "wall_boundary_condition.hpp"
 
 constexpr int i_vapor = 1;
 constexpr int i_solid = 2;
@@ -142,6 +143,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
       auto water_ice_eos = WaterIceEOS();
       const auto vapor_density_forcing = DensityForcing<Real>(i_vapor);
       const auto solid_density_forcing = DensityForcing<Real>(i_solid);
+      const auto solver = WallBoundaryCondition::build_solver<Real>();
 
       for (int k = pmb->ks; k <= pmb->ke; ++k) {
         for (int j = pmb->js; j <= pmb->je; ++j) {
@@ -150,18 +152,21 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
             if (is_left_boundary(pmb, i_flow, k, j, i)
                 && std::abs(x_norm) > exit_delta) {
               auto w_kji = w.at(k, j, i);
-              const Real dx = get_dxf(pmb, i_flow, k, j, i);
-              const Real mass_flux = (
-                  -w_kji[IPR]
-                  / (
-                    std::sqrt(
-                        2 * M_PI * water_ice_eos.gas.gas_constant
-                        * pthermo->GetTemp(w_kji)
-                    )
-                  )
+
+              const Real air_temp = pthermo->GetTemp(w_kji);
+
+              const Real vapor_p = (
+                  w_kji[IDN] * w_kji[i_vapor] * air_temp
+                  * pthermo->GetRd() * pthermo->GetInvMuRatio(i_vapor)
               );
 
+              auto bc = solver.solve(air_temp, vapor_p);
+
+              const Real dx = get_dxf(pmb, i_flow, k, j, i);
+              const Real mass_flux = bc.evaporation;
+
               pmb->user_out_var(3, k, j, i) = mass_flux;
+              pmb->user_out_var(5, k, j, i) = bc.ice_temp;
 
               const Real drho = dt * mass_flux / dx;
 
@@ -196,6 +201,8 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
       "problem", "exit_center_velocity");
     const static Real temperature = pin->GetReal(
       "problem", "exit_temperature");
+    const static bool bc_vacuum = pin->GetOrAddBoolean(
+      "problem", "bc_vauum", false);
 
     auto _bottom_bc = [](MeshBlock *pmb, Coordinates *pco,
                       AthenaArray<Real> &prim, FaceField &b,
@@ -226,10 +233,24 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
                 center_velocity * (1. - square(x/exit_delta)));
               w[IPR] = pressure;
             } else {
-              auto wi = prim.at(k, j, il + ii - 1);
-              for (int n = 0; n < NHYDRO; ++n) {
-                const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
-                w[n] = sign * wi[n];
+              if (bc_vacuum) {
+                auto wi = prim.at(k, j, il + ii - 1);
+                for (int n = 0; n < NHYDRO; ++n) {
+                  const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
+                  w[n] = sign * wi[n];
+                }
+              } else {
+                auto water_ice_eos = WaterIceEOS();
+                const Real pressure = 1e-20;
+                const Real density = water_ice_eos.gas.density(
+                  temperature, pressure);
+                w[IDN] = density;
+                w[i_vapor] = 1.;
+                w[i_solid] = 0.;
+                for (int n = IVX; n <= IVZ; ++n) {
+                  w[n] = 0.;
+                }
+                w[IPR] = pressure;
               }
             }
           }
@@ -241,12 +262,13 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(5);
+  AllocateUserOutputVariables(6);
   SetUserOutputVariableName(0, "temp");
   SetUserOutputVariableName(1, "mass_flux_1");
   SetUserOutputVariableName(2, "mass_flux_2");
   SetUserOutputVariableName(3, "mass_flux");
   SetUserOutputVariableName(4, "ice_mass_flux");
+  SetUserOutputVariableName(5, "ice_temp");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {

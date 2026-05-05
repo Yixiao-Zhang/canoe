@@ -54,8 +54,8 @@ ix3_bc      = periodic
 ox3_bc      = periodic
 
 <meshblock>
-nx1         = 50
-nx2         = 100
+nx1         = 100
+nx2         = 200
 nx3         = 1
 
 <hydro>
@@ -67,12 +67,14 @@ pfloor = 1e-53
 <problem>
 thermodynamics_config = geyser_h2o.yaml
 
-forcing_wall_interaction = true
+forcing_wall_interaction = false
 
 # nu_iso = 12e-6
 # kappa_iso = 12e-6
 nu_iso = 0.
 kappa_iso = 0.
+
+bc_vacuum = true
 
 outerspace_pressure = 1e-20
 
