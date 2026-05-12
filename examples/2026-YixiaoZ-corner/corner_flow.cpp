@@ -191,6 +191,31 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
     EnrollUserExplicitSourceFunction(_forcing);
   }
 
+  const static bool forcing_user_gravity = pin->GetOrAddBoolean(
+    "problem", "forcing_user_gravity", false);
+
+  if (forcing_user_gravity) {
+    const static Real grav_acc = pin->GetReal(
+      "problem", "user_grav_acc");
+    auto _forcing = [](MeshBlock *pmb, Real const time, Real const dt,
+                 AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+                 AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+                 AthenaArray<Real> &s) -> void {
+      const int iv = IVX + i_flow;
+      for (int k = pmb->ks; k <= pmb->ke; ++k) {
+        for (int j = pmb->js; j <= pmb->je; ++j) {
+          for (int i = pmb->is; i <= pmb->ie; ++i) {
+            u(iv, k, j, i) += dt * grav_acc * w(IDN, k, j, i);
+            u(IEN, k, j, i) += dt * grav_acc * get_center_mass_flux(
+              pmb->phydro->flux, X1DIR, k, j, i
+            );
+          }
+        }
+      }
+    };
+    EnrollUserExplicitSourceFunction(_forcing);
+  }
+
   EnrollViscosityCoefficient(WaterVaporViscosity);
   EnrollConductionCoefficient(WaterVaporConduction);
 
