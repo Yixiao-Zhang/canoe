@@ -25,9 +25,6 @@
 
 constexpr int i_vapor = 1;
 constexpr int i_solid = 2;
-constexpr int i_flow = X1DIR;
-constexpr int i_norm = X2DIR;
-constexpr int i_span = X3DIR;
 
 constexpr Real x_flow_exit = 0.;
 
@@ -47,77 +44,6 @@ inline Real get_cp(const int n_species) {
   );
 }
 
-template<class Real>
-class DensityForcing {
-  public:
-    const int n_species;
-    const Real cp;
-
-    DensityForcing(const int n_species):
-      n_species(n_species), cp(get_cp(n_species)) {}
-
-    inline void apply(StrideIterator<Real*> u, StrideIterator<Real*> w,
-                      const Real drho, const Real source_temp) const {
-        auto pthermo = Thermodynamics::GetInstance();
-        const Real t_exchange = (
-          (drho > 0) ? source_temp
-          : pthermo->GetTemp(w)
-        );
-        const Real u_exchange = (drho > 0) ? 0. : w[IVX];
-        const Real v_exchange = (drho > 0) ? 0. : w[IVY];
-        const Real w_exchange = (drho > 0) ? 0. : w[IVZ];
-
-        u[n_species] += drho;
-        u[IEN] += drho * (
-          cp * t_exchange + 0.5 * (
-            square(u_exchange) + square(v_exchange) + square(w_exchange)
-          )
-        );
-        u[IVX] += drho * u_exchange;
-        u[IVY] += drho * v_exchange;
-        u[IVZ] += drho * w_exchange;
-    }
-};
-
-
-void WaterVaporConduction(HydroDiffusion *phdif, MeshBlock *pmb, const AthenaArray<Real> &prim,
-                     const AthenaArray<Real> &bcc,
-                     int is, int ie, int js, int je, int ks, int ke) {
-  auto pthermo = Thermodynamics::GetInstance();
-
-  const Real gas_cp = get_cp(i_vapor);
-
-  for (int k=ks; k<=ke; ++k) {
-    for (int j=js; j<=je; ++j) {
-      for (int i=is; i<=ie; ++i) {
-        const Real rho = prim(IDN, k, j, i);
-        const Real kappa = get_mu(phdif->kappa_iso, rho);
-        phdif->kappa(HydroDiffusion::DiffProcess::iso, k, j, i) = (
-          kappa * rho * gas_cp
-        );
-      }
-    }
-  }
-  return;
-}
-
-void WaterVaporViscosity(HydroDiffusion *phdif, MeshBlock *pmb, const AthenaArray<Real> &prim,
-                    const AthenaArray<Real> &bcc, int is, int ie, int js, int je,
-                    int ks, int ke) {
-  for (int k=ks; k<=ke; ++k) {
-    for (int j=js; j<=je; ++j) {
-      for (int i=is; i<=ie; ++i) {
-        const Real rho = prim(IDN, k, j, i);
-        const Real nu = get_mu(phdif->nu_iso, rho);
-        phdif->nu(HydroDiffusion::DiffProcess::iso, k, j, i) = (
-          nu
-        );
-      }
-    }
-  }
-  return;
-}
-
 void Mesh::InitUserMeshData(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
 
@@ -128,97 +54,6 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
     throw std::runtime_error("i_solid does not match");
   }
 
-  const static bool forcing_wall_interaction = pin->GetBoolean("problem",
-    "forcing_wall_interaction");
-
-  if (forcing_wall_interaction) {
-    const static Real exit_delta = pin->GetReal(
-      "problem", "exit_delta");
-    auto _forcing = [](MeshBlock *pmb, Real const time, Real const dt,
-                 AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-                 AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-                 AthenaArray<Real> &s) -> void {
-
-      auto pthermo = Thermodynamics::GetInstance();
-      auto water_ice_eos = WaterIceEOS();
-      const auto vapor_density_forcing = DensityForcing<Real>(i_vapor);
-      const auto solid_density_forcing = DensityForcing<Real>(i_solid);
-      const auto solver = WallBoundaryCondition::build_solver<Real>();
-
-      for (int k = pmb->ks; k <= pmb->ke; ++k) {
-        for (int j = pmb->js; j <= pmb->je; ++j) {
-          for (int i = pmb->is; i <= pmb->ie; ++i) {
-            const Real x_norm = get_xv(pmb, i_norm, k, j, i);
-            if (is_left_boundary(pmb, i_flow, k, j, i)
-                && std::abs(x_norm) > exit_delta) {
-              auto w_kji = w.at(k, j, i);
-
-              const Real air_temp = pthermo->GetTemp(w_kji);
-
-              const Real vapor_p = (
-                  w_kji[IDN] * w_kji[i_vapor] * air_temp
-                  * pthermo->GetRd() * pthermo->GetInvMuRatio(i_vapor)
-              );
-
-              auto bc = solver.solve(air_temp, vapor_p);
-
-              const Real dx = get_dxf(pmb, i_flow, k, j, i);
-              const Real mass_flux = bc.evaporation;
-
-              pmb->user_out_var(3, k, j, i) = mass_flux;
-              pmb->user_out_var(5, k, j, i) = bc.ice_temp;
-
-              const Real drho = dt * mass_flux / dx;
-
-              const Real dummy_wall_temp = 0.;
-
-              vapor_density_forcing.apply(u.at(k, j, i), w.at(k, j, i),
-                drho, dummy_wall_temp);
-
-              const Real solid_density = w_kji[IDN] * w_kji[i_solid];
-              const Real drho_solid = std::max({
-                w_kji[i_solid] / w_kji[i_vapor] * drho,
-                -0.1 * solid_density,
-              });
-              solid_density_forcing.apply(u.at(k, j, i), w_kji,
-                drho_solid, dummy_wall_temp);
-              pmb->user_out_var(4, k, j, i) = drho_solid * (dx / dt);
-            }
-          }
-        }
-      }
-    };
-    EnrollUserExplicitSourceFunction(_forcing);
-  }
-
-  const static bool forcing_user_gravity = pin->GetOrAddBoolean(
-    "problem", "forcing_user_gravity", false);
-
-  if (forcing_user_gravity) {
-    const static Real grav_acc = pin->GetReal(
-      "problem", "user_grav_acc");
-    auto _forcing = [](MeshBlock *pmb, Real const time, Real const dt,
-                 AthenaArray<Real> const &w, AthenaArray<Real> const &r,
-                 AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
-                 AthenaArray<Real> &s) -> void {
-      const int iv = IVX + i_flow;
-      for (int k = pmb->ks; k <= pmb->ke; ++k) {
-        for (int j = pmb->js; j <= pmb->je; ++j) {
-          for (int i = pmb->is; i <= pmb->ie; ++i) {
-            u(iv, k, j, i) += dt * grav_acc * w(IDN, k, j, i);
-            u(IEN, k, j, i) += dt * grav_acc * get_center_mass_flux(
-              pmb->phydro->flux, X1DIR, k, j, i
-            );
-          }
-        }
-      }
-    };
-    EnrollUserExplicitSourceFunction(_forcing);
-  }
-
-  EnrollViscosityCoefficient(WaterVaporViscosity);
-  EnrollConductionCoefficient(WaterVaporConduction);
-
   if (pin->GetOrAddString("mesh", "ix1_bc", "none") == "user") {
     const static Real exit_delta = pin->GetReal(
       "problem", "exit_delta");
@@ -226,8 +61,6 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
       "problem", "exit_center_velocity");
     const static Real temperature = pin->GetReal(
       "problem", "exit_temperature");
-    const static bool bc_vacuum = pin->GetOrAddBoolean(
-      "problem", "bc_vauum", false);
 
     auto _bottom_bc = [](MeshBlock *pmb, Coordinates *pco,
                       AthenaArray<Real> &prim, FaceField &b,
@@ -241,59 +74,65 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
 
             const int i = il - ii;
             auto w = prim.at(k, j, i);
-            const Real x = get_xv(pmb, i_norm, k, j, i);
 
-            if (std::abs(x) < exit_delta) {
-              auto water_ice_eos = WaterIceEOS();
-              const Real pressure = water_ice_eos.pres_sat(temperature);
-              const Real density = water_ice_eos.gas.density(
-                temperature, pressure);
-              w[IDN] = density;
-              w[i_vapor] = 1.;
-              w[i_solid] = 0.;
-              for (int n = IVX; n <= IVZ; ++n) {
-                w[n] = 0.;
-              }
-              w[IVX+i_flow] += (
-                center_velocity * (1. - square(x/exit_delta)));
-              w[IPR] = pressure;
-            } else {
-              if (bc_vacuum) {
-                auto wi = prim.at(k, j, il + ii - 1);
-                for (int n = 0; n < NHYDRO; ++n) {
-                  const int sign = (IVX <= n && n <= IVZ) ? -1 : 1;
-                  w[n] = sign * wi[n];
-                }
-              } else {
-                auto water_ice_eos = WaterIceEOS();
-                const Real pressure = 1e-20;
-                const Real density = water_ice_eos.gas.density(
-                  temperature, pressure);
-                w[IDN] = density;
-                w[i_vapor] = 1.;
-                w[i_solid] = 0.;
-                for (int n = IVX; n <= IVZ; ++n) {
-                  w[n] = 0.;
-                }
-                w[IPR] = pressure;
-              }
-            }
+            auto water_ice_eos = WaterIceEOS();
+            const Real pressure = water_ice_eos.pres_sat(temperature);
+            const Real density = water_ice_eos.gas.density(
+              temperature, pressure);
+            w[IDN] = density;
+            w[i_vapor] = 1.;
+            w[i_solid] = 0.;
+            w[IVX] = center_velocity;
+            w[IVY] = 0.;
+            w[IVZ] = 0.;
+            w[IPR] = pressure;
           }
         }
       }
     };
     EnrollUserBoundaryFunction(BoundaryFace::inner_x1, _bottom_bc);
   }
+  if (pin->GetOrAddString("mesh", "ox2_bc", "none") == "user") {
+
+    const static Real temperature = pin->GetReal(
+      "problem", "exit_temperature");
+    const static Real outerspace_pressure = pin->GetReal(
+      "problem", "outerspace_pressure");
+
+    auto _vacuum_bc = [](MeshBlock *pmb, Coordinates *pco,
+                      AthenaArray<Real> &prim, FaceField &b,
+                      Real time, Real dt,
+                      int il, int iu,
+                      int jl, int ju,
+                      int kl, int ku, int ngh) -> void {
+      const Real pressure = outerspace_pressure;
+      auto water_ice_eos = WaterIceEOS();
+      const Real density = water_ice_eos.gas.density(temperature, pressure);
+      for (int k = kl; k <= ku; ++k) {
+        for (int jj = 1; jj <= ngh; ++jj) {
+          for (int i = il; i <= iu; ++i) {
+            const int j = jl + jj;
+            auto w = prim.at(k, j, i);
+            w[IDN] = density;
+            w[i_vapor] = 1.;
+            w[i_solid] = 0.;
+            w[IVX] = 0.;
+            w[IVY] = 0.;
+            w[IVZ] = 0.;
+            w[IPR] = pressure;
+          }
+        }
+      }
+    };
+    EnrollUserBoundaryFunction(BoundaryFace::outer_x2, _vacuum_bc);
+  }
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(6);
+  AllocateUserOutputVariables(3);
   SetUserOutputVariableName(0, "temp");
   SetUserOutputVariableName(1, "mass_flux_1");
   SetUserOutputVariableName(2, "mass_flux_2");
-  SetUserOutputVariableName(3, "mass_flux");
-  SetUserOutputVariableName(4, "ice_mass_flux");
-  SetUserOutputVariableName(5, "ice_temp");
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {

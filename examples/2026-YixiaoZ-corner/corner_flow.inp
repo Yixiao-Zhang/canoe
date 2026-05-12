@@ -33,19 +33,18 @@ xorder      = 1             # horizontal reconstruction order
 integrator  = rk3           # integration method
 
 <mesh>
-nx1         = 400
-x1min       = 0.
+nx1         = 200
+x1min       = 0.1
 x1max       = 10e3.
 ix1_bc      = user
 ox1_bc      = outflow
-x1rat       = 1.0175
+x1rat       = 1.06
 
-nx2         = 400
+nx2         = 3
 x2min       = 0.
-x2max       = 10e3
+x2max       = 1.5707963267948966
 ix2_bc      = reflecting
-ox2_bc      = outflow
-x2rat       = 1.0175
+ox2_bc      = user
 
 nx3         = 1
 x3min       = 0.
@@ -54,8 +53,8 @@ ix3_bc      = periodic
 ox3_bc      = periodic
 
 <meshblock>
-nx1         = 80
-nx2         = 50
+nx1         = 40
+nx2         = 3
 nx3         = 1
 
 <hydro>
@@ -65,23 +64,14 @@ dfloor = 1e-53
 pfloor = 1e-53
 
 <problem>
+
+radius = 0.1
+
 thermodynamics_config = geyser_h2o.yaml
-
-forcing_wall_interaction = false
-
-forcing_user_gravity = true
-user_grav_acc = -1000.
-
-# nu_iso = 12e-6
-# kappa_iso = 12e-6
-nu_iso = 0.
-kappa_iso = 0.
-
-bc_vacuum = true
 
 outerspace_pressure = 1e-20
 
 exit_delta = 0.1
-exit_center_velocity = 30.
+exit_center_velocity = 400.
 exit_temperature = 220.
 
