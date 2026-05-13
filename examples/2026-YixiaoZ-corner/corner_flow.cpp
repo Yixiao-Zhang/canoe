@@ -111,7 +111,7 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
       for (int k = kl; k <= ku; ++k) {
         for (int jj = 1; jj <= ngh; ++jj) {
           for (int i = il; i <= iu; ++i) {
-            const int j = jl + jj;
+            const int j = ju + jj;
             auto w = prim.at(k, j, i);
             w[IDN] = density;
             w[i_vapor] = 1.;

@@ -40,7 +40,7 @@ ix1_bc      = user
 ox1_bc      = outflow
 x1rat       = 1.06
 
-nx2         = 3
+nx2         = 45
 x2min       = 0.
 x2max       = 1.5707963267948966
 ix2_bc      = reflecting
@@ -54,7 +54,7 @@ ox3_bc      = periodic
 
 <meshblock>
 nx1         = 40
-nx2         = 3
+nx2         = 45
 nx3         = 1
 
 <hydro>
