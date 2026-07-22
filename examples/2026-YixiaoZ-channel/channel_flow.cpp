@@ -32,11 +32,11 @@ constexpr int i_span = 3;
 
 constexpr Real x_flow_exit = 0.;
 
-constexpr Real max_nu = 1.;
-
 Real g_wall_delta;
 Real g_wall_x_abstol;
 Real g_ice_k;
+Real g_snow_thermal_resistance;
+Real g_max_nu;
 
 inline bool is_masked(Real x_norm, Real x_flow) {
   return (
@@ -58,7 +58,7 @@ inline bool is_ice_wall_boundary(MeshBlock *pmb,
 }
 
 inline Real get_mu(Real mu, Real rho) {
-  return std::min(mu / rho, max_nu);
+  return std::min(mu / rho, g_max_nu);
 }
 
 inline Real get_cp(const int n_species) {
@@ -125,7 +125,8 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
         if (is_ice_wall_boundary(pmb, k, j, i)) {
           const Real dx = get_dxf(pmb, i_norm, k, j, i);
           const auto solver = WallBoundaryCondition::build_solver(
-            0.5 * dx, get_mu(kappa_iso, rho) * rho * gas_cp, g_ice_k
+            0.5 * dx, get_mu(kappa_iso, rho) * rho * gas_cp, g_ice_k,
+            g_snow_thermal_resistance
           );
 
           const Real distance = x_flow_exit - get_xv(pmb, i_flow, k, j, i);
@@ -144,8 +145,8 @@ void WallInteraction(MeshBlock *pmb, Real const time, Real const dt,
           const Real drho_vapor = dt * bc.evaporation / dx;
           vapor_density_forcing.apply(u_kji, w_kji, drho_vapor, bc.ice_temp);
 
-          const Real solid_density = w_kji[IDN] * w_kji[i_solid];
-          const Real drho_solid = -0.5 * solid_density;
+          const Real drho_solid = (drho_vapor < 0) ?
+              drho_vapor * w_kji[i_solid] / w_kji[i_vapor]: 0.;
           solid_density_forcing.apply(u_kji, w_kji, drho_solid, bc.ice_temp);
 
           pmb->user_out_var(1, k, j, i) = bc.ice_temp;
@@ -253,6 +254,9 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   }
 
   g_ice_k = pin->GetReal("problem", "ice_k");
+  g_max_nu = pin->GetReal("problem", "max_nu");
+
+  g_snow_thermal_resistance = pin->GetReal("problem", "snow_thermal_resistance");
 
   g_wall_delta = pin->GetReal("problem", "wall_delta");
   g_wall_x_abstol = 1e-8 * std::abs(g_wall_delta);
@@ -499,6 +503,15 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
           const Real x_norm = get_xv(this, i_norm, k, j, i);
           const Real x_flow = get_xv(this, i_flow, k, j, i);
 
+          constexpr Real v_max = 0.;
+          const Real vc = (
+            v_max / (x_flow_exit - x_flow_bottom)
+            * (x_flow - x_flow_bottom)
+          );
+          const Real v = ((std::abs(x_norm) < g_wall_delta) ?
+            vc * (1. - square(x_norm / g_wall_delta)) : 0.
+          );
+
           const Real pressure = (
             bottom_pressure
             * ((is_masked(x_norm, x_flow)) ?
@@ -512,6 +525,7 @@ void MeshBlock::ProblemGenerator(ParameterInput *pin) {
           phydro->w(IDN, k, j, i) = density;
           phydro->w(i_vapor, k, j, i) = 1.;
           phydro->w(IPR, k, j, i) = pressure;
+          phydro->w(IVY, k, j, i) = v;
         }
       }
     }

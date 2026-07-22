@@ -65,7 +65,7 @@ implicit_flag = 0
 <problem>
 thermodynamics_config = geyser_h2o.yaml
 
-initialize_with_ncfile = true
+initialize_with_ncfile = false
 
 nu_iso = 12e-6
 kappa_iso = 12e-6
@@ -78,6 +78,7 @@ outerspace_pressure = 1e-5
 wall_delta = 0.1
 
 ice_k = 651.0
+snow_thermal_resistance = 0.
 
 nx_half_conduit = 12
 xnorm_rat = 1.085

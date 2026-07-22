@@ -73,14 +73,17 @@ namespace WallBoundaryCondition {
   };
 
   template<class Real>
-  class OuterSurfaceRadiation {
+  class OuterSurface {
     public:
       const Real effective_temp;
       const Real stefan_boltzmann_const;
+      const Real thermal_resistance;
 
-      OuterSurfaceRadiation(Real effective_temp, Real stefan_boltzmann_const):
+      OuterSurface(Real effective_temp, Real stefan_boltzmann_const,
+          Real thermal_resistance):
         effective_temp(effective_temp),
-        stefan_boltzmann_const(stefan_boltzmann_const) {}
+        stefan_boltzmann_const(stefan_boltzmann_const),
+        thermal_resistance(thermal_resistance) {}
 
       template<class R>
       inline auto pow4(const R &x) const {
@@ -89,17 +92,14 @@ namespace WallBoundaryCondition {
       }
 
       template<class R>
-      inline auto energy_flux(const R &ice_temp) const {
-        return stefan_boltzmann_const * (pow4(ice_temp) - pow4(effective_temp));
-      }
-
-      template<class R>
       inline auto outer_surface_temp(const R &total_energy_flux) const {
-        const auto t4 = (
+        const auto t_outer_4 = (
           pow4(effective_temp)
           + total_energy_flux / stefan_boltzmann_const
         );
-        return pow(t4, 0.25);
+        const auto t_outer = pow(t_outer_4, 0.25);
+        const auto t_inner = t_outer + thermal_resistance * total_energy_flux;
+        return t_inner;
       }
   };
 
@@ -199,14 +199,14 @@ namespace WallBoundaryCondition {
     public:
       VaporSolidInterface<Real> wall;
       IceShellConduction<Real> conduction;
-      OuterSurfaceRadiation<Real> radiation;
+      OuterSurface<Real> outer_surface;
 
       Solver(VaporSolidInterface<Real> wall,
             IceShellConduction<Real> conduction,
-            OuterSurfaceRadiation<Real> radiation):
+            OuterSurface<Real> outer_surface):
         wall(wall),
         conduction(conduction),
-        radiation(radiation) {}
+        outer_surface(outer_surface) {}
 
       auto solve(const Real air_temp, const Real vapor_p,
             const Real radius) const {
@@ -219,7 +219,7 @@ namespace WallBoundaryCondition {
         const auto solver = NewtonRaphsonSolver(max_iter, abstol);
 
         auto g = [this, air_temp, radius](auto energy_flux) {
-          const auto surf_temp = radiation.outer_surface_temp(energy_flux);
+          const auto surf_temp = outer_surface.outer_surface_temp(energy_flux);
           return conduction.energy_flux(
             surf_temp, air_temp, (0.5 * M_PI) * radius
           ) - energy_flux;
@@ -229,7 +229,7 @@ namespace WallBoundaryCondition {
         const Real f_guess = solver.solve(g, f_min, f_min, f_max);
 
         auto f = [this, air_temp, vapor_p, radius](auto energy_flux) {
-          const auto surf_temp = radiation.outer_surface_temp(energy_flux);
+          const auto surf_temp = outer_surface.outer_surface_temp(energy_flux);
           const auto ice_temp = conduction.inner_surface_temp(
             surf_temp, energy_flux, (0.5 * M_PI) * radius
           );
@@ -240,7 +240,7 @@ namespace WallBoundaryCondition {
 
         // const Real energy_flux = solver.solve(f, f_min, f_max);
         const Real energy_flux = solver.solve(f, f_guess, f_min, f_max);
-        const Real surf_temp = radiation.outer_surface_temp(energy_flux);
+        const Real surf_temp = outer_surface.outer_surface_temp(energy_flux);
         const Real ice_temp = conduction.inner_surface_temp(
             surf_temp, energy_flux, (0.5 * M_PI) * radius
         );
@@ -259,7 +259,9 @@ namespace WallBoundaryCondition {
   };
 
   template<class Real>
-  auto build_solver(const Real dx, const Real kappa, const Real ice_k) {
+  auto build_solver(const Real dx, const Real kappa,
+        const Real ice_k, const Real snow_layer_resistance
+      ) {
     const Real Avogadro = 6.02214076e23;
     const Real Boltzmann = 1.380649e-23;
     const Real atomic_mass_H = 1.008e-3;
@@ -289,11 +291,11 @@ namespace WallBoundaryCondition {
 
     IceShellConduction<Real> conduction(ice_k);
 
-    OuterSurfaceRadiation<Real> radiation(
-      outer_surface_temp_eff, stefan_boltzmann_const
+    OuterSurface<Real> outer_surface(
+      outer_surface_temp_eff, stefan_boltzmann_const, snow_layer_resistance
     );
 
-    Solver<Real> solver (wall, conduction, radiation);
+    Solver<Real> solver (wall, conduction, outer_surface);
     return solver;
   }
 }
