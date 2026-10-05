@@ -10,7 +10,7 @@ endmacro()
 set_if_empty(NUMBER_GHOST_CELLS 3)
 
 # canoe configure
-set(COORDINATE_SYSTEM "spherical_polar")
+set(COORDINATE_SYSTEM "cylindrical")
 
 set(NVAPOR 1)
 set(NCLOUD 1)
