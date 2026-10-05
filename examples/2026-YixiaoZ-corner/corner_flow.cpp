@@ -44,6 +44,38 @@ inline Real get_cp(const int n_species) {
   );
 }
 
+template<class Real>
+class DensityForcing {
+  public:
+    const int n_species;
+    const Real cp;
+
+    DensityForcing(const int n_species):
+      n_species(n_species), cp(get_cp(n_species)) {}
+
+    inline void apply(StrideIterator<Real*> u, StrideIterator<Real*> w,
+                      const Real drho, const Real source_temp) const {
+        auto pthermo = Thermodynamics::GetInstance();
+        const Real t_exchange = (
+          (drho > 0) ? source_temp
+          : pthermo->GetTemp(w)
+        );
+        const Real u_exchange = (drho > 0) ? 0. : w[IVX];
+        const Real v_exchange = (drho > 0) ? 0. : w[IVY];
+        const Real w_exchange = (drho > 0) ? 0. : w[IVZ];
+
+        u[n_species] += drho;
+        u[IEN] += drho * (
+          cp * t_exchange + 0.5 * (
+            square(u_exchange) + square(v_exchange) + square(w_exchange)
+          )
+        );
+        u[IVX] += drho * u_exchange;
+        u[IVY] += drho * v_exchange;
+        u[IVZ] += drho * w_exchange;
+    }
+};
+
 void Mesh::InitUserMeshData(ParameterInput *pin) {
   auto pthermo = Thermodynamics::GetInstance();
 
@@ -55,8 +87,6 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
   }
 
   if (pin->GetOrAddString("mesh", "ix1_bc", "none") == "user") {
-    const static Real exit_delta = pin->GetReal(
-      "problem", "exit_delta");
     const static Real center_velocity = pin->GetReal(
       "problem", "exit_center_velocity");
     const static Real temperature = pin->GetReal(
@@ -126,13 +156,80 @@ void Mesh::InitUserMeshData(ParameterInput *pin) {
     };
     EnrollUserBoundaryFunction(BoundaryFace::outer_x2, _vacuum_bc);
   }
+
+  if (pin->GetOrAddString("problem", "wall_boundary_condition", "none")
+      == "rad_geo") {
+
+    const static Real exit_temperature = pin->GetReal(
+      "problem", "exit_temperature");
+
+    auto _forcing = [](
+                 MeshBlock *pmb, Real const time, Real const dt,
+                 AthenaArray<Real> const &w, AthenaArray<Real> const &r,
+                 AthenaArray<Real> const &bcc, AthenaArray<Real> &u,
+                 AthenaArray<Real> &s) -> void {
+
+      auto pthermo = Thermodynamics::GetInstance();
+      const auto vapor_density_forcing = DensityForcing<Real>(i_vapor);
+      const auto solver = WallBoundaryCondition::build_solver<Real>();
+      const Real theta = (0.5 * M_PI) - get_xmax(pmb, X2DIR);
+
+      for (int k = pmb->ks; k <= pmb->ke; ++k) {
+        for (int j = pmb->js; j <= pmb->je; ++j) {
+          for (int i = pmb->is; i <= pmb->ie; ++i) {
+            const Real radius = get_xv(pmb, X1DIR, k, j, i);
+
+            if (is_right_boundary(pmb, X2DIR, k, j, i)) {
+              auto w_kji = w.at(k, j, i);
+
+              const Real air_temp = pthermo->GetTemp(w_kji);
+
+              const Real vapor_p = (
+                  w_kji[IDN] * w_kji[i_vapor] * air_temp
+                  * pthermo->GetRd() * pthermo->GetInvMuRatio(i_vapor)
+              );
+
+              auto bc = solver.solve(air_temp, vapor_p,
+                theta,
+                radius, exit_temperature
+              );
+
+              const Real evaporation = bc.evaporation;
+              const Real ice_temp = bc.ice_temp;
+
+              const Real drho = (
+                dt * evaporation * pmb->pcoord->GetFace2Area(k, j+1, i)
+                / pmb->pcoord->GetCellVolume(k, j, i)
+              );
+
+              vapor_density_forcing.apply(u.at(k, j, i), w.at(k, j, i),
+                drho, ice_temp);
+
+              pmb->user_out_var(3, k, j, i) = evaporation;
+              pmb->user_out_var(4, k, j, i) = ice_temp;
+            }
+          }
+        }
+      }
+    };
+    EnrollUserExplicitSourceFunction(_forcing);
+
+  }
 }
 
 void MeshBlock::InitUserMeshBlockData(ParameterInput *pin) {
-  AllocateUserOutputVariables(3);
-  SetUserOutputVariableName(0, "temp");
-  SetUserOutputVariableName(1, "mass_flux_1");
-  SetUserOutputVariableName(2, "mass_flux_2");
+  std::vector<const char*> names = {
+    "temp",
+    "mass_flux_1",
+    "mass_flux_2",
+    "evaporation",
+    "ice_temp",
+  };
+
+  AllocateUserOutputVariables(names.size());
+  for (int n = 0; n < names.size(); ++n) {
+    SetUserOutputVariableName(n, names[n]);
+  }
 }
 
 void MeshBlock::UserWorkBeforeOutput(ParameterInput *pin) {

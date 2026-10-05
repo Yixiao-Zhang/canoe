@@ -1,6 +1,7 @@
 #pragma once
 
-#include "adcpp.hpp"
+#include <cmath>
+#include <stdexcept>
 
 namespace WallBoundaryCondition {
 
@@ -21,7 +22,7 @@ namespace WallBoundaryCondition {
       template<class R>
       inline auto p_sat(const R &temp) const {
         auto t3 = temp / temp3;
-        return p3 * exp(beta * (1. - 1./t3) - delta * log(t3));
+        return p3 * std::exp(beta * (1. - 1./t3) - delta * std::log(t3));
       }
 
       template<class R1, class R2>
@@ -35,12 +36,12 @@ namespace WallBoundaryCondition {
 
       template<class R>
       inline auto one_side_vapor_flux(const R &temp) const {
-        return p_sat(temp) / sqrt(2 * M_PI * gas_constant * temp);
+        return p_sat(temp) / std::sqrt(2 * M_PI * gas_constant * temp);
       }
 
       template<class R>
       inline auto one_side_vapor_flux(const R &temp, const R &pres) const {
-        return pres / sqrt(2 * M_PI * gas_constant * temp);
+        return pres / std::sqrt(2 * M_PI * gas_constant * temp);
       }
 
       template<class R1, class R2, class R3>
@@ -89,32 +90,25 @@ namespace WallBoundaryCondition {
           pow4(effective_temp)
           + total_energy_flux / stefan_boltzmann_const
         );
-        return pow(t4, 0.25);
+        return std::pow(t4, 0.25);
       }
   };
 
   template<class Real>
-  class NewtonRaphsonSolver {
+  class IceConduction {
     public:
-      const int max_iter;
-      const Real f_abstol;
+      const Real kappa0;
 
-      NewtonRaphsonSolver(const int max_iter, const Real f_abstol):
-        max_iter(max_iter), f_abstol(f_abstol) {}
+      IceConduction(Real kappa0):
+        kappa0(kappa0) {}
 
-      template<class F>
-      Real solve(const F f, Real x, const Real x_min, const Real x_max) const {
-        typedef adcpp::fwd::Number<Real> Dual;
-        for (int i = 0; i < max_iter; ++i) {
-          Dual x_ad(x, 1.);
-          Dual f_ad = f(x_ad);
-          if (std::abs(f_ad.value()) < f_abstol) {
-            break;
-          }
-          x -= f_ad.value() / f_ad.derivative();
-          x = std::clamp(x, x_min, x_max);
-        }
-        return x;
+      template<class R1, class R2, class R3, class R4>
+      inline auto energy_flux(const R1 &ice_temp, const R2 &wall_temp,
+          const R3 &dist, const R4 &theta) const {
+        return (
+          kappa0 / ((0.5 * M_PI + theta) * dist)
+          * std::log(wall_temp/ice_temp)
+        );
       }
   };
 
@@ -168,30 +162,37 @@ namespace WallBoundaryCondition {
     public:
       VaporSolidInterface<Real> wall;
       OuterSurfaceRadiation<Real> radiation;
+      IceConduction<Real> conduction;
 
       Solver(VaporSolidInterface<Real> wall,
-            OuterSurfaceRadiation<Real> radiation):
+            OuterSurfaceRadiation<Real> radiation,
+            IceConduction<Real> conduction):
         wall(wall),
-        radiation(radiation) {}
+        radiation(radiation),
+        conduction(conduction) {}
 
-      auto solve(const Real air_temp, const Real vapor_p) const {
+      auto solve(const Real air_temp, const Real vapor_p, const Real theta,
+          const Real dist, const Real wall_temp) const {
         const int max_iter = 64;
         const Real abstol = 1e-12;
 
         const Real t_min = 50.;
-        const Real t_max = 400.;
+        const Real t_max = 500.;
 
-        // const auto solver = BisectSolver(max_iter, abstol);
-        const auto solver = NewtonRaphsonSolver(max_iter, abstol);
+        const auto solver = BisectSolver(max_iter, abstol);
 
-        auto f = [this, air_temp, vapor_p](auto ice_temp) {
-          const auto rad_energy_flux = radiation.energy_flux(ice_temp);
+        auto f = [this, air_temp, vapor_p, dist, wall_temp, theta
+            ](auto ice_temp) {
+          const auto rad_energy_flux = (
+            radiation.energy_flux(ice_temp) * std::cos(theta));
           const auto wall_energy_flux = wall.energy_flux(
             ice_temp, air_temp, vapor_p);
-          return wall_energy_flux - rad_energy_flux;
+          const auto conductive_energy_flux = conduction.energy_flux(
+            ice_temp, wall_temp, dist, theta);
+          return wall_energy_flux + conductive_energy_flux - rad_energy_flux;
         };
 
-        const Real ice_temp = solver.solve(f, air_temp, t_min, t_max);
+        const Real ice_temp = solver.solve(f, t_min, t_max);
         const Real e = wall.net_vapor_flux(ice_temp, air_temp, vapor_p);
 
         struct Solution {
@@ -217,6 +218,8 @@ namespace WallBoundaryCondition {
     const Real outer_surface_temp_eff = 67.;
     const Real stefan_boltzmann_const = 5.67e-8;
 
+    const Real ice_kappa0 = 651.;
+
     const Real universial_gas_constant = Avogadro * Boltzmann;
     const Real water_mw = 2 * atomic_mass_H  + atomic_mass_O;
     const Real water_gas_constant = universial_gas_constant / water_mw;
@@ -233,7 +236,9 @@ namespace WallBoundaryCondition {
       outer_surface_temp_eff, stefan_boltzmann_const
     );
 
-    Solver<Real> solver (wall, radiation);
+    IceConduction<Real> conduction(ice_kappa0);
+
+    Solver<Real> solver (wall, radiation, conduction);
     return solver;
   }
 }
