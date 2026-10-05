@@ -67,6 +67,8 @@ pfloor = 1e-53
 
 radius = 0.1
 
+do_saturation_adjustment = false
+
 thermodynamics_config = geyser_h2o.yaml
 
 outerspace_pressure = 1e-20

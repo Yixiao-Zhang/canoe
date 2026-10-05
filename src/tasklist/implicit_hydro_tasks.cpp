@@ -46,6 +46,10 @@ int find_task(Task const *task_list, int ntasks, TaskID const &id) {
   throw NotFoundError("find_task", "Task Function");
 }
 
+namespace {
+  bool do_saturation_adjustment = true;
+}
+
 ImplicitHydroTasks::ImplicitHydroTasks(ParameterInput *pin, Mesh *pm)
     : TimeIntegratorTaskList(pin, pm) {
   using namespace HydroIntegratorTaskNames;  // NOLINT (build/namespace)
@@ -108,6 +112,9 @@ ImplicitHydroTasks::ImplicitHydroTasks(ParameterInput *pin, Mesh *pm)
       task_list_[itask].dependency = (RECV_SCLR | UPDATE_ALLCONS);
     }
   }
+
+  do_saturation_adjustment = pin->GetOrAddBoolean(
+    "problem", "do_saturation_adjustment", true);
 }
 
 void ImplicitHydroTasks::AddTask(TaskID const &id, TaskID const &dep) {
@@ -309,7 +316,9 @@ TaskStatus ImplicitHydroTasks::UpdateAllConserved(MeshBlock *pmb, int stage) {
 
         pthermo->SetConserved(u.at(k, j, i), m.at(k, j, i));
         // pthermo->Evolve(pmb->pmy_mesh->time, pmb->pmy_mesh->dt);
-        pthermo->EquilibrateUV(pmb->pmy_mesh->dt);
+        if (do_saturation_adjustment) {
+          pthermo->EquilibrateUV(pmb->pmy_mesh->dt);
+        }
         pthermo->GetConserved(u.at(k, j, i), m.at(k, j, i));
 
         /*std::cout << "after: " << std::endl;
